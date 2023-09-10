@@ -2,7 +2,7 @@
 name = "element-packet-forwarder"
 version = "0.1.0"
 authors = ["Enes Öztürk <enes.ozturk@unikie.com>"]
-description = "A Rust project."
+description = "Packet forwarder app to run element app on ghaf project"
 documentation = "https://docs.rs/element-packet-forwarder"
 repository = "https://github.com/enesoztrk/element-packet-forwarder"
 readme = "README.md"

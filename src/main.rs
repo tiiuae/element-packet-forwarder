@@ -8,8 +8,10 @@ use tokio::io;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    //println!("Hello world!");
-    cli::handling_args()?;
-    println!("Hello world!");
+    
+   //let args= cli::handling_args()?;
+   cli::get_if1_ip()?;
+   cli::get_if2_ip()?;
+
     Ok(())
 }

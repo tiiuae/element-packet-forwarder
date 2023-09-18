@@ -49,9 +49,7 @@ fn is_on_off(s: &str) -> Result<String, String> {
         if val=="on" || val=="off" {
             Ok(val)
         } else {
-            Err(format!(
-                "Value can be on or off"
-            ))
+            Err("Value can be on or off".to_string())
         }
 }
 fn handling_args()->  Result<Args, Box<dyn Error>>{
@@ -97,7 +95,8 @@ fn get_app_ip(interface_name: &str,is_ipv6_on:&str)->Result<IpAddr, Box<dyn Erro
             if let Some(ipv4) = ipv4 {
                 if is_ipv6_on == "off" {
                     println!("IPv4 address associated with interface '{}': {}", interface_name, ipv4);
-                    return Ok(ipv4);
+                    return  Err("IPv4 is not supported".into());
+                    //return Ok(ipv4);
                 }
                
             } else {
@@ -106,15 +105,15 @@ fn get_app_ip(interface_name: &str,is_ipv6_on:&str)->Result<IpAddr, Box<dyn Erro
     
             if let Some(ipv6) = ipv6 {
                 println!("IPv6 address associated with interface '{}': {}", interface_name, ipv6);
-                return Ok(ipv6);
+                Ok(ipv6)
             } else {
                 println!("No IPv6 address associated with interface '{}'", interface_name);
-                return  Err("IPv6 and IPv4 are not found".into());
+                Err("IPv6 and IPv4 are not found".into())
             }
             
         }
         // Default to None for both IPv4 and IPv6 in case of an error
-        Err(err) => return  Err(err),
+        Err(err) => Err(err),
     }
     
 
@@ -135,3 +134,26 @@ pub fn get_if2_ip()->Result<IpAddr, Box<dyn Error>> {
  
 
 }
+
+
+pub fn get_if1_name()->Option<&'static str> {
+
+    if CLI_ARGS.if1.is_empty() {
+            return None;
+    }
+    Some(&CLI_ARGS.if1)
+
+}
+
+
+pub fn get_if2_name()->Option<&'static str> {
+
+   
+    if CLI_ARGS.if2.is_empty() {
+        return None;
+    }
+
+    Some(&CLI_ARGS.if2)
+   
+  
+  }

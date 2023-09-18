@@ -38,6 +38,7 @@ clap = {version = "^4.4",features = ["derive"]}
 lazy_static = "1.4"
 pnet = "^0.34"
 pnet_macros = "^0.34"
+nix = {version = "^0.27",features = ["net"]}
 
 [dev-dependencies]
 # version_sync: to ensure versions in `Cargo.toml` and `README.md` are in sync

@@ -9,6 +9,14 @@ use std::sync::Arc;
 use std::error::Error;
 use tokio::time::sleep;
 
+#[derive(PartialEq)]
+pub enum NwId{
+
+    One,
+    Two,
+
+}
+
 
 // Import the hex crate
 #[tokio::main]
@@ -33,50 +41,61 @@ async fn main() ->  Result<(), Box<dyn Error>>{
    // Set the subscriber as the default
    tracing::subscriber::set_global_default(subscriber).unwrap();
 
+    let udp_pinecone_mcast_sock=create_pinecone_udp_sock(NwId::One);
 
-  
-    //first network Init
-    let tokio_udp_pinecone_mcast_sock_if1=create_pinecone_udp_sock(1);
-  
-    //Second network Init
-    let tokio_udp_pinecone_mcast_sock_if2=create_pinecone_udp_sock(2);
-
-    let udp_pinecone_mcast_if1_handle=tokio::spawn(async move {
-        udp_pinecone_receive(1,tokio_udp_pinecone_mcast_sock_if1).await;
+    let udp_pinecone_mcast_nw_one_handle=tokio::spawn(async move {
+        udp_pinecone_receive_nw_one(udp_pinecone_mcast_sock).await;
     });
 
+    let udp_pinecone_mcast_sock=create_pinecone_udp_sock(NwId::Two);
 
-    let udp_pinecone_mcast_if2_handle=tokio::spawn(async move {
-        udp_pinecone_receive(2,tokio_udp_pinecone_mcast_sock_if2).await;
+    let udp_pinecone_mcast_nw_two_handle=tokio::spawn(async move {
+        udp_pinecone_receive_nw_two(udp_pinecone_mcast_sock).await;
     });
 
 
 
-    udp_pinecone_mcast_if1_handle.await.expect("udp pinecone interface one mcast function error");
-    udp_pinecone_mcast_if2_handle.await.expect("udp pinecone interface two mcast function error");
+    udp_pinecone_mcast_nw_one_handle.await.expect("udp pinecone network one mcast function error");
+    udp_pinecone_mcast_nw_two_handle.await.expect("udp pinecone network two mcast function error");
 
     Ok(())
 }
 
 
-/// Receive bytes from UPD socket and write to stdout until EOF.
-async fn udp_pinecone_receive(nw_id:u32,rx_socket: UdpSocket) {
+/// Receive bytes from Udp Socket from nw one
+async fn udp_pinecone_receive_nw_one(rx_socket: UdpSocket) {
     let mut buf = vec![0; 1024];
     loop {
         match rx_socket.recv_from(&mut buf).await {
             Ok((size, peer)) => {
                 let data = buf[..size].to_vec();
-                log_payload(&format!("[{nw_id}]Udp data received from {}, size{},payload:\n",peer.ip(),size),&data).await;
+                log_payload(&format!("[1]Udp data received from {}, size{},payload:\n",peer.ip(),size),&data).await;
             }
             Err(e) => {
                 tracing::error!("Error receiving data: {:?}", e);
-                break; // Break the loop on error
             }
         }
     }
 
 }
 
+
+/// Receive bytes from Udp Socket from nw two
+async fn udp_pinecone_receive_nw_two(rx_socket: UdpSocket) {
+    let mut buf = vec![0; 1024];
+    loop {
+        match rx_socket.recv_from(&mut buf).await {
+            Ok((size, peer)) => {
+                let data = buf[..size].to_vec();
+                log_payload(&format!("[2]Udp data received from {}, size{},payload:\n",peer.ip(),size),&data).await;
+            }
+            Err(e) => {
+                tracing::error!("Error receiving data: {:?}", e);
+            }
+        }
+    }
+
+}
 
 async fn log_payload(str:&str,data:&Vec<u8>){
 
@@ -106,10 +125,10 @@ async fn log_payload(str:&str,data:&Vec<u8>){
 }
 
 
-fn create_pinecone_udp_sock(nw_id:u32)->tokio::net::UdpSocket{
+fn create_pinecone_udp_sock(nw_id:NwId)->tokio::net::UdpSocket{
 
     let std_udp_sock:std::net::UdpSocket=
-    if nw_id == 1 {
+    if nw_id == NwId::One {
        fwd_udp::udp_ipv6_init(cli::get_if1_name().unwrap())
 
     }

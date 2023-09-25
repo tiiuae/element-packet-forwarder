@@ -1,0 +1,39 @@
+{
+  "name": "element-packet-forwarder-container",
+  //"service": "devcontainer",
+  "image": "element-packet-forwarder-docker",
+// Default path to open when attaching to a new container.
+"workspaceFolder": "/prj",
+
+"mounts": [
+  "source=${localWorkspaceFolder},target=/prj,type=bind,consistency=cached"
+],
+
+// An array port numbers to forwardP
+"forwardPorts": [8000],
+
+// Container user VS Code should use when connecting
+"remoteUser": "root",
+
+// Set environment variables for VS Code and sub-processes
+"remoteEnv": {
+	"MY_VARIABLE": "some-value"
+},
+
+"customizations": {
+  // Configure properties specific to VS Code.
+  "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "yzhang.markdown-all-in-one",
+        "ms-vscode.cpptools",
+        "vadimcn.vscode-lldb",
+        "taiyuuki.vscode-cargo-scripts",
+        "serayuzgur.crates",
+        "tamasfe.even-better-toml"
+      ]
+  }
+}
+
+
+}

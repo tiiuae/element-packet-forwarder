@@ -38,7 +38,9 @@ clap = {version = "^4.4",features = ["derive"]}
 lazy_static = "1.4"
 pnet = "^0.34"
 pnet_macros = "^0.34"
-
+nix = {version = "^0.27",features = ["net"]}
+tracing = "0.1.37"
+tracing-subscriber = "0.3.17"
 [dev-dependencies]
 # version_sync: to ensure versions in `Cargo.toml` and `README.md` are in sync
 version-sync = "0.9.4"
@@ -46,14 +48,7 @@ version-sync = "0.9.4"
 # actually, the docs recommend installing this globally:
 #   $ git clone https://github.com/rnag/cargo-bump && cd cargo-bump && cargo install --path . && cd .. && rm -rf cargo-bump
 # logging utilities
-log = "^0.4"
-sensible-env-logger = "0.1.0"
-# tokio: for `async` support
-tokio = { version = "^1.0", features = ["full"] }
-# Some useful libraries - uncomment if needed :-)
-# tabled = "0.4.2"
-# indoc = "1.0.4"
-# criterion = "0.3.5"
+
 
 ### FEATURES #################################################################
 

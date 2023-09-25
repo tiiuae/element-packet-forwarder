@@ -1,20 +1,20 @@
 # element-packet-forwarder
 
 [<img alt="github" src="https://img.shields.io/badge/github-enesoztrk/element--packet--forwarder-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="22">](https://github.com/enesoztrk/element-packet-forwarder)
-[<img alt="build status" src="https://img.shields.io/github/workflow/status/enesoztrk/element-packet-forwarder/build/main?style=for-the-badge" height="22">](https://github.com/enesoztrk/element-packet-forwarder/actions?query=branch%3Amain)
 
-A Rust project.
-
+Element Packet Forwarder project
 ## Getting started
 
-This project requires Rust to be installed. On OS X with Homebrew you can just run `brew install rust`.
 
-Running it then should be as simple as:
+### 1. VS Code Dev Env 
 
+1. "Remote Development" extension bundle should be installed in VS Code.
+2. Create docker image
 ```console
-$ cargo build --release
-$ ./target/release/element-packet-forwarder
+    $ ./build_docker_image.sh
 ```
+3. Press F1 to open VS Code cmd window. Then type "Dev Container: Rebuild Without Cache and Reopen in Container" cmd.Then press enter. 
+
 
 ## Examples
 

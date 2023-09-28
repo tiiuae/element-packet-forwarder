@@ -16,11 +16,6 @@ Element Packet Forwarder project
 3. Press F1 to open VS Code cmd window. Then type "Dev Container: Rebuild Without Cache and Reopen in Container" cmd.Then press enter. 
 
 
-## Examples
-
-You can check out sample usage of this crate in the [examples/](https://github.com/enesoztrk/element-packet-forwarder/tree/main/examples)
-folder in the project repo on GitHub.
-
 ### Testing
 
 ``cargo test``

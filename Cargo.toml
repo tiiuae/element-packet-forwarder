@@ -42,6 +42,7 @@ nix = {version = "^0.27",features = ["net"]}
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
 [dev-dependencies]
+tracing-test = "0.2.4"
 # version_sync: to ensure versions in `Cargo.toml` and `README.md` are in sync
 version-sync = "0.9.4"
 # cargo-bump: to bump package version and tag a commit at the same time.
@@ -53,3 +54,10 @@ version-sync = "0.9.4"
 ### FEATURES #################################################################
 
 [features]
+
+
+[package.metadata.scripts]
+run = "cargo run"
+check = "cargo check"
+build = "cargo build"
+release = "cargo build --release"

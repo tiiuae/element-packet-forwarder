@@ -2,6 +2,7 @@
 mod cli;
 /// udp communication module
 mod fwd_udp;
+mod shared_state;
 use tokio::net::{TcpListener, TcpStream,UdpSocket};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;

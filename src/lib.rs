@@ -1,6 +1,6 @@
 #![doc(html_root_url = "https://docs.rs/element-packet-forwarder/0.1.0")]
-#![warn(rust_2018_idioms/*, missing_docs */)]
-#![deny(warnings, dead_code, unused_imports, unused_mut)]
+#![warn(rust_2018_idioms, missing_docs)]
+//#![deny(warnings, dead_code, unused_imports, unused_mut)]
 
 //! [![github]](https://github.com/enesoztrk/element-packet-forwarder)&ensp;[![crates-io]](https://crates.io/crates/element-packet-forwarder)&ensp;[![docs-rs]](https://docs.rs/element-packet-forwarder)
 //!
@@ -41,7 +41,11 @@
 //! [`README.md`]: https://github.com/enesoztrk/element-packet-forwarder
 //!
 
-
+/// command line parsing and handling module
+pub mod cli;
+/// udp communication module
+pub mod fwd_udp;
+pub mod shared_state;
 
 
 /// Gives a friendly hello!

@@ -1,8 +1,7 @@
-/// command line parsing and handling module
-mod cli;
-/// udp communication module
-mod fwd_udp;
-mod shared_state;
+use element_packet_forwarder::shared_state::*;
+use element_packet_forwarder::fwd_udp;
+use element_packet_forwarder::cli;
+
 use tokio::net::{TcpListener, TcpStream,UdpSocket};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;

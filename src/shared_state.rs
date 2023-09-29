@@ -1,9 +1,9 @@
 use std::collections::{HashMap, VecDeque};
+use std::ops::DerefMut;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::net::IpAddr;
-
 
 #[derive(Eq, Hash, PartialEq,Debug,Clone)]
 struct PortIpPort{
@@ -71,29 +71,22 @@ impl SharedState{
         }
     }
    
-    pub async fn insert_tcp_incoming_data(
+    fn insert_tcp_fwd_route_data(
         &self,
         nw_id:u8,
+        tcp_con_map:&mut HashMap<PortIpPort, TcpData>,
         nw_one_ip: IpAddr,
         nw_one_src_port:u16,
         nw_two_src_port:u16,
         in_data:Vec<u8> 
-    ) -> bool {
-
+    )-> bool{
         let key: PortIpPort = PortIpPort{
             nw_one_ip,
             nw_one_src_port,
             nw_two_src_port,
         };
 
-        let mut tcp_con = if nw_id == 1 {
-            self.tcp_con_in_nw_one.lock().await
-        } else {
-            self.tcp_con_in_nw_two.lock().await
-        };
-
-
-        match tcp_con.get_mut(&key) {
+        match tcp_con_map.get_mut(&key) {
             None => {
 
                 let mut new_dataq=VecDeque::new();
@@ -104,7 +97,7 @@ impl SharedState{
                     is_connected:true
                 };
                 
-               if tcp_con.insert(key, in_data).is_none(){
+               if tcp_con_map.insert(key, in_data).is_none(){
                     tracing::trace!("First data is added to shared state,nw_id:{}",nw_id);
                }
                
@@ -118,6 +111,78 @@ impl SharedState{
     }
 
 
+    pub async fn insert_tcp_incoming_data(
+        &self,
+        nw_id:u8,
+        nw_one_ip: IpAddr,
+        nw_one_src_port:u16,
+        nw_two_src_port:u16,
+        in_data:Vec<u8> 
+    ) -> bool {
+
+       
+        let mut tcp_con = if nw_id == 1 {
+            self.tcp_con_in_nw_one.lock().await
+        } else {
+            self.tcp_con_in_nw_two.lock().await
+        };
+
+        self.insert_tcp_fwd_route_data(nw_id,tcp_con.deref_mut(),nw_one_ip,nw_one_src_port,nw_two_src_port,in_data)
+     
+      
+    }
+
+
+
+    pub async fn insert_tcp_outgoing_data(
+        &self,
+        nw_id:u8,
+        nw_one_ip: IpAddr,
+        nw_one_src_port:u16,
+        nw_two_src_port:u16,
+        in_data:Vec<u8> 
+    ) -> bool {
+
+       
+        let mut tcp_con = if nw_id == 1 {
+            self.tcp_con_out_nw_one.lock().await
+        } else {
+            self.tcp_con_out_nw_two.lock().await
+        };
+
+        self.insert_tcp_fwd_route_data(nw_id,tcp_con.deref_mut(),nw_one_ip,nw_one_src_port,nw_two_src_port,in_data)
+     
+      
+    }
+
+    fn get_tcp_fwd_route_data(
+        &self,
+        nw_id:u8,
+        tcp_con_map:&mut HashMap<PortIpPort, TcpData>,
+        nw_one_ip: IpAddr,
+        nw_one_src_port:u16,
+        nw_two_src_port:u16
+    ) -> Option<Vec<u8>> {
+        let key: PortIpPort = PortIpPort{
+            nw_one_ip,
+            nw_one_src_port,
+            nw_two_src_port,
+        };
+
+
+        if let Some(new_message)= tcp_con_map.get_mut(&key)  {
+          
+            if !new_message.dataq.is_empty(){
+
+               return new_message.dataq.pop_front();
+              
+            }         
+        }
+
+        tracing::error!("There is no incoming data ->nw_id:{},route_info:{:?}",nw_id,key);
+        None
+    }
+
     pub async fn get_tcp_incoming_data(
         &self,
         nw_id:u8,
@@ -125,31 +190,14 @@ impl SharedState{
         nw_one_src_port:u16,
         nw_two_src_port:u16
     ) -> Option<Vec<u8>> {
-
-        let key: PortIpPort = PortIpPort{
-            nw_one_ip,
-            nw_one_src_port,
-            nw_two_src_port,
-        };
-
+        
         let mut tcp_con = if nw_id == 1 {
             self.tcp_con_in_nw_one.lock().await
         } else {
             self.tcp_con_in_nw_two.lock().await
         };
 
-        if let Some(new_message)= tcp_con.get_mut(&key)  {
-          
-                if !new_message.dataq.is_empty(){
-
-                   return new_message.dataq.pop_front();
-                  
-                }     
-                
-        }
-
-        tracing::error!("There is no incoming data ->nw_id:{},route_info:{:?}",nw_id,key);
-        None
+        self.get_tcp_fwd_route_data(nw_id,tcp_con.deref_mut(),nw_one_ip,nw_one_src_port,nw_two_src_port)
     }
 
 
@@ -317,7 +365,6 @@ mod tests {
 
     #[tokio::test]
     #[traced_test]
-
     async fn incoming_tcp_data_to_nw_one_1_get_data(){
         let state = SharedState::new().await;
        

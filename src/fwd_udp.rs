@@ -1,11 +1,9 @@
-/// command line parsing and handling module
-use crate::cli;
+
 ///TODO: winapi functions should be added for windows support
 use nix::net::if_::*;
 
 
 use std::net::{SocketAddrV6, Ipv6Addr,UdpSocket,IpAddr};
-use std::str::FromStr;
 use std::ffi::CString;
 use std::error::Error;
 

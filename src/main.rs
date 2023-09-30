@@ -1,66 +1,63 @@
-use element_packet_forwarder::shared_state::*;
-use element_packet_forwarder::fwd_udp;
 use element_packet_forwarder::cli;
+use element_packet_forwarder::fwd_udp;
+use element_packet_forwarder::shared_state::*;
 
-use tokio::net::{TcpListener, TcpStream,UdpSocket};
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
-use std::sync::Arc;
 use std::error::Error;
+use std::sync::Arc;
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 #[derive(PartialEq)]
-pub enum NwId{
-
+pub enum NwId {
     One,
     Two,
-
 }
-
 
 // Import the hex crate
 #[tokio::main]
-async fn main() ->  Result<(), Box<dyn Error>>{
-    
-     // Start configuring a `fmt` subscriber
-     let subscriber = tracing_subscriber::fmt()
-     // Use a more compact, abbreviated log format
-     .compact()
-     // Display source code file paths
-     .with_file(true)
-     // Display source code line numbers
-     .with_line_number(true)
-     // Display the thread ID an event was recorded on
-     .with_thread_ids(true)
-     // Don't display the event's target (module path)
-     .with_target(false)
-     .with_max_level(tracing::Level::TRACE)
-     // Build the subscriber
-     .finish();
+async fn main() -> Result<(), Box<dyn Error>> {
+    // Start configuring a `fmt` subscriber
+    let subscriber = tracing_subscriber::fmt()
+        // Use a more compact, abbreviated log format
+        .compact()
+        // Display source code file paths
+        .with_file(true)
+        // Display source code line numbers
+        .with_line_number(true)
+        // Display the thread ID an event was recorded on
+        .with_thread_ids(true)
+        // Don't display the event's target (module path)
+        .with_target(false)
+        .with_max_level(tracing::Level::TRACE)
+        // Build the subscriber
+        .finish();
 
-   // Set the subscriber as the default
-   tracing::subscriber::set_global_default(subscriber).unwrap();
+    // Set the subscriber as the default
+    tracing::subscriber::set_global_default(subscriber).unwrap();
 
-    let udp_pinecone_mcast_sock=create_pinecone_udp_sock(NwId::One);
+    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::One);
 
-    let udp_pinecone_mcast_nw_one_handle=tokio::spawn(async move {
+    let udp_pinecone_mcast_nw_one_handle = tokio::spawn(async move {
         udp_pinecone_receive_nw_one(udp_pinecone_mcast_sock).await;
     });
 
-    let udp_pinecone_mcast_sock=create_pinecone_udp_sock(NwId::Two);
+    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::Two);
 
-    let udp_pinecone_mcast_nw_two_handle=tokio::spawn(async move {
+    let udp_pinecone_mcast_nw_two_handle = tokio::spawn(async move {
         udp_pinecone_receive_nw_two(udp_pinecone_mcast_sock).await;
     });
 
-
-
-    udp_pinecone_mcast_nw_one_handle.await.expect("udp pinecone network one mcast function error");
-    udp_pinecone_mcast_nw_two_handle.await.expect("udp pinecone network two mcast function error");
+    udp_pinecone_mcast_nw_one_handle
+        .await
+        .expect("udp pinecone network one mcast function error");
+    udp_pinecone_mcast_nw_two_handle
+        .await
+        .expect("udp pinecone network two mcast function error");
 
     Ok(())
 }
-
 
 /// Receive bytes from Udp Socket from nw one
 async fn udp_pinecone_receive_nw_one(rx_socket: UdpSocket) {
@@ -69,16 +66,22 @@ async fn udp_pinecone_receive_nw_one(rx_socket: UdpSocket) {
         match rx_socket.recv_from(&mut buf).await {
             Ok((size, peer)) => {
                 let data = buf[..size].to_vec();
-                log_payload(&format!("[1]Udp data received from {}, size{},payload:\n",peer.ip(),size),&data).await;
+                log_payload(
+                    &format!(
+                        "[1]Udp data received from {}, size{},payload:\n",
+                        peer.ip(),
+                        size
+                    ),
+                    &data,
+                )
+                .await;
             }
             Err(e) => {
                 tracing::error!("Error receiving data: {:?}", e);
             }
         }
     }
-
 }
-
 
 /// Receive bytes from Udp Socket from nw two
 async fn udp_pinecone_receive_nw_two(rx_socket: UdpSocket) {
@@ -87,18 +90,24 @@ async fn udp_pinecone_receive_nw_two(rx_socket: UdpSocket) {
         match rx_socket.recv_from(&mut buf).await {
             Ok((size, peer)) => {
                 let data = buf[..size].to_vec();
-                log_payload(&format!("[2]Udp data received from {}, size{},payload:\n",peer.ip(),size),&data).await;
+                log_payload(
+                    &format!(
+                        "[2]Udp data received from {}, size{},payload:\n",
+                        peer.ip(),
+                        size
+                    ),
+                    &data,
+                )
+                .await;
             }
             Err(e) => {
                 tracing::error!("Error receiving data: {:?}", e);
             }
         }
     }
-
 }
 
-async fn log_payload(str:&str,data:&Vec<u8>){
-
+async fn log_payload(str: &str, data: &Vec<u8>) {
     let mut formatted_payload = String::new();
 
     formatted_payload.push_str(str);
@@ -124,20 +133,12 @@ async fn log_payload(str:&str,data:&Vec<u8>){
     tracing::trace!("{}", formatted_payload);
 }
 
-
-fn create_pinecone_udp_sock(nw_id:NwId)->tokio::net::UdpSocket{
-
-    let std_udp_sock:std::net::UdpSocket=
-    if nw_id == NwId::One {
-       fwd_udp::udp_ipv6_init(cli::get_if1_name().unwrap())
-
-    }
-    else{
+fn create_pinecone_udp_sock(nw_id: NwId) -> tokio::net::UdpSocket {
+    let std_udp_sock: std::net::UdpSocket = if nw_id == NwId::One {
+        fwd_udp::udp_ipv6_init(cli::get_if1_name().unwrap())
+    } else {
         fwd_udp::udp_ipv6_init(cli::get_if2_name().unwrap())
     };
 
-
     UdpSocket::from_std(std_udp_sock).expect("from std err")
-
-
 }

@@ -4,9 +4,13 @@ use std::ops::DerefMut;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-const NUM_NW_ONE_IN_CON: usize = 64;
 const TOTAL_NUM_NW: usize = 2;
+
+#[derive(PartialEq)]
+pub enum NwId {
+    One,
+    Two,
+}
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone)]
 struct PortIpPort {
@@ -16,7 +20,8 @@ struct PortIpPort {
 }
 
 type DataqT = VecDeque<Vec<u8>>;
-
+const UDP_PINECONE_PAYLOAD_SIZE: usize = 96;
+type PineconeUdpDataT = Vec<u8>;
 #[derive(Debug, PartialEq, Clone)]
 struct TcpData {
     dataq: DataqT,
@@ -40,10 +45,10 @@ pub struct SharedState {
     tcp_src_port_nw_one: Arc<AtomicU16>,
 
     /// udp pinecone incoming packets handling
-    udp_pinecone_in: [Arc<Mutex<DataqT>>; TOTAL_NUM_NW],
+    udp_pinecone_in: Vec<Arc<Mutex<PineconeUdpDataT>>>,
 
     /// udp pinecone outgoing packets handling
-    udp_pinecone_out: [Arc<Mutex<DataqT>>; TOTAL_NUM_NW],
+    udp_pinecone_out: Vec<Arc<Mutex<PineconeUdpDataT>>>,
 }
 
 impl SharedState {
@@ -52,8 +57,18 @@ impl SharedState {
             tcp_con_in: Default::default(),
             tcp_con_out: Default::default(),
             tcp_src_port_nw_one: Arc::new(AtomicU16::new(0)),
-            udp_pinecone_in: Default::default(),
-            udp_pinecone_out: Default::default(),
+            udp_pinecone_in: {
+                let mut v = Vec::with_capacity(TOTAL_NUM_NW);
+                (0..TOTAL_NUM_NW)
+                    .for_each(|_| v.push(Arc::new(Mutex::new(vec![0; UDP_PINECONE_PAYLOAD_SIZE]))));
+                v
+            },
+            udp_pinecone_out: {
+                let mut v = Vec::with_capacity(TOTAL_NUM_NW);
+                (0..TOTAL_NUM_NW)
+                    .for_each(|_| v.push(Arc::new(Mutex::new(vec![0; UDP_PINECONE_PAYLOAD_SIZE]))));
+                v
+            },
         }
     }
 
@@ -197,8 +212,55 @@ impl SharedState {
     }
 
     // Set the tcp source port number field
-    pub async fn set_tcp_src_port_nw_one(&self, port_num: u16) {
+    fn set_tcp_src_port_nw_one(&self, udp_pinecone_in_data: &[u8]) {
+        let port_num: u16 = u16::from_le_bytes([
+            udp_pinecone_in_data[UDP_PINECONE_PAYLOAD_SIZE - 1],
+            udp_pinecone_in_data[UDP_PINECONE_PAYLOAD_SIZE - 2],
+        ]);
+        tracing::debug!("Port num is set:{}", port_num);
         self.tcp_src_port_nw_one.store(port_num, Ordering::Relaxed)
+    }
+
+    ///insert udp pinecone incoming data
+    pub async fn insert_udp_incoming_pinecone_data(
+        &self,
+        nw_id: usize,
+        in_data: PineconeUdpDataT,
+    ) -> bool {
+        //we have to allow receiving udp pinecone packets only from network id 1
+        assert!(nw_id == 1);
+        let mut udp_map = self.udp_pinecone_in[nw_id].lock().await;
+        if in_data.len() == UDP_PINECONE_PAYLOAD_SIZE {
+            self.set_tcp_src_port_nw_one(&in_data);
+            let _ = std::mem::replace(udp_map.deref_mut(), in_data);
+            tracing::trace!("udp incoming pinecone data is inserted: {:?}", udp_map);
+            return true;
+        }
+        tracing::error!(
+            "udp pinecone incoming data payload size is not {},which is {}",
+            UDP_PINECONE_PAYLOAD_SIZE,
+            in_data.len()
+        );
+        false
+    }
+
+    ///get udp pinecone incoming data
+    pub async fn get_udp_incoming_pinecone_data(&self, nw_id: usize) -> Option<PineconeUdpDataT> {
+        //we have to allow receiving udp pinecone packets only from network id 1
+        assert!(nw_id == 1);
+        let mut udp_map = self.udp_pinecone_in[nw_id].lock().await;
+        let is_all_zeros = udp_map.iter().all(|&x| x == 0);
+
+        if !is_all_zeros {
+            tracing::trace!("udp incoming pinecone data is got: {:?}", udp_map);
+            return Some(std::mem::replace(
+                udp_map.deref_mut(),
+                vec![0; UDP_PINECONE_PAYLOAD_SIZE],
+            ));
+        }
+        tracing::error!("udp incoming pinecone data is not available or consumed");
+
+        None
     }
 }
 
@@ -207,15 +269,23 @@ mod tests {
 
     use crate::shared_state::SharedState;
     use crate::shared_state::*;
-    use std::net::{IpAddr, Ipv4Addr};
+    use rand::Rng;
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        ops::Deref,
+    };
     use tracing_test::traced_test;
     #[tokio::test]
     async fn set_get_tcp_src_port_nw_one() {
         let state = SharedState::new().await;
+        let port_num: u16 = 0x9f93;
+        let mut udp_data_in = vec![0; UDP_PINECONE_PAYLOAD_SIZE];
+        udp_data_in[UDP_PINECONE_PAYLOAD_SIZE - 2] = 0x9f;
+        udp_data_in[UDP_PINECONE_PAYLOAD_SIZE - 1] = 0x93;
 
-        state.set_tcp_src_port_nw_one(12).await;
-        let port_num = state.get_tcp_src_port_nw_one().await;
-        assert_eq!(port_num, 12);
+        state.set_tcp_src_port_nw_one(&udp_data_in);
+        let port_num_result = state.get_tcp_src_port_nw_one().await;
+        assert_eq!(port_num, port_num_result);
     }
 
     #[tokio::test]
@@ -575,5 +645,101 @@ mod tests {
             true
         );
         assert_eq!(tcp_con.get(&tcp_route_info).unwrap().is_connected, true);
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn incoming_udp_pinecone_insert_data_to_nw1_with_udp_pinecone_payload_size() {
+        let state = SharedState::new().await;
+        const NWID: usize = 1;
+
+        // Create a random number generator
+        let mut rng = rand::thread_rng();
+        let mut new_data = Vec::with_capacity(UDP_PINECONE_PAYLOAD_SIZE);
+        // Fill the vector with random u8 values
+        for _ in 0..UDP_PINECONE_PAYLOAD_SIZE {
+            let random_value: u8 = rng.gen();
+            new_data.push(random_value);
+        }
+        let new_data_clone = new_data.clone();
+
+        let is_success = state
+            .insert_udp_incoming_pinecone_data(NWID, new_data)
+            .await;
+        let udp_con = state.udp_pinecone_in[NWID].lock().await;
+        assert!(is_success);
+        assert_eq!(udp_con.as_ref(), new_data_clone);
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn incoming_udp_pinecone_insert_data_to_nw1_with_diff_udp_pinecone_payload_size() {
+        let state = SharedState::new().await;
+        const NWID: usize = 1;
+        let wrong_size = UDP_PINECONE_PAYLOAD_SIZE + 1;
+        // Create a random number generator
+        let mut rng = rand::thread_rng();
+        let mut new_data = Vec::with_capacity(wrong_size);
+        // Fill the vector with random u8 values
+        for _ in 0..wrong_size {
+            let random_value: u8 = rng.gen();
+            new_data.push(random_value);
+        }
+        let new_data_clone = new_data.clone();
+
+        let is_success = state
+            .insert_udp_incoming_pinecone_data(NWID, new_data)
+            .await;
+        let udp_con = state.udp_pinecone_in[NWID].lock().await;
+        assert!(!is_success);
+        assert_ne!(udp_con.as_ref(), new_data_clone);
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    #[should_panic]
+    async fn incoming_udp_pinecone_insert_data_to_nw2() {
+        let state = SharedState::new().await;
+        const NWID: usize = 2;
+        // Create a random number generator
+        let mut rng = rand::thread_rng();
+        let mut new_data = Vec::with_capacity(UDP_PINECONE_PAYLOAD_SIZE);
+        // Fill the vector with random u8 values
+        for _ in 0..UDP_PINECONE_PAYLOAD_SIZE {
+            let random_value: u8 = rng.gen();
+            new_data.push(random_value);
+        }
+
+        let _ = state
+            .insert_udp_incoming_pinecone_data(NWID, new_data)
+            .await;
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn incoming_udp_pinecone_get_data_from_nw1_with_udp_pinecone_payload_size() {
+        let state = SharedState::new().await;
+        const NWID: usize = 1;
+        // Create a random number generator
+        let mut rng = rand::thread_rng();
+        let mut new_data = Vec::with_capacity(UDP_PINECONE_PAYLOAD_SIZE);
+        // Fill the vector with random u8 values
+        for _ in 0..UDP_PINECONE_PAYLOAD_SIZE {
+            let random_value: u8 = rng.gen();
+            new_data.push(random_value);
+        }
+
+        {
+            let mut udp_in = state.udp_pinecone_in[NWID].lock().await;
+            *udp_in = new_data.clone();
+        }
+
+        let received_data = state.get_udp_incoming_pinecone_data(NWID).await;
+
+        assert_eq!(received_data, Some(new_data));
+        let received_data = state.get_udp_incoming_pinecone_data(NWID).await;
+        assert_eq!(received_data, None);
+
+        // println!("udp_in : {:?}",udp_in);
     }
 }

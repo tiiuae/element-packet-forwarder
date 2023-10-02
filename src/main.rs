@@ -9,12 +9,6 @@ use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
-#[derive(PartialEq)]
-pub enum NwId {
-    One,
-    Two,
-}
-
 // Import the hex crate
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

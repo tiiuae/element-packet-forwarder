@@ -46,9 +46,3 @@ pub mod cli;
 /// udp communication module
 pub mod fwd_udp;
 pub mod shared_state;
-/// Gives a friendly hello!
-///
-/// Says "Hello, [name](Person::name)" to the `Person` it is called on.
-pub fn hello_world() -> bool {
-    true
-}

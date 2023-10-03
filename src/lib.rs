@@ -10,7 +10,7 @@
 //!
 //! <br>
 //!
-//! A Rust project.
+//! Packet forwarder app to run element app on ghaf project.
 //!
 //! <br>
 //!
@@ -21,16 +21,16 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     println!("Hello world!");
+//!     let shared_state = SharedState::new().await;
 //!
-//!     Ok(())
+//!    let (_pinecone_res, _proxy_res, _tracing_res) = join!(
+//!         fwd_udp::start_pinecone_udp_mcast(shared_state.clone()),
+//!         start_proxy(shared_state.clone()),
+//!         start_tracing_engine()
+//!     );
 //! }
 //! ```
 //!
-//! ## Examples
-//!
-//! You can check out sample usage of this crate in the [examples/](https://github.com/enesoztrk/element-packet-forwarder/tree/main/examples)
-//! folder in the project repo on GitHub.
 //!
 //! ## Readme Docs
 //!
@@ -43,6 +43,76 @@
 
 /// command line parsing and handling module
 pub mod cli;
-/// udp communication module
+/// forwarding udp packets between networks module
 pub mod fwd_udp;
+/// Shared data between tasks module
 pub mod shared_state;
+use crate::shared_state::*;
+use tokio::time::{sleep, Duration};
+
+pub async fn start_proxy(state: SharedState) -> Result<(), Box<dyn std::error::Error>> {
+    //proxy task to check and forward data packets
+    let proxy_task_handle = tokio::spawn(async move {
+        proxy_process(state).await;
+    });
+
+    proxy_task_handle.await.expect("proxy task function error");
+    Ok(())
+}
+
+async fn proxy_process(state: SharedState) {
+    loop {
+        tracing::debug!("Hey, I am proxy process");
+
+        sleep(Duration::from_millis(1000)).await;
+    }
+}
+
+pub async fn start_tracing_engine() -> Result<(), Box<dyn std::error::Error>> {
+    // Start configuring a `fmt` subscriber
+    let subscriber = tracing_subscriber::fmt()
+        // Use a more compact, abbreviated log format
+        .compact()
+        // Display source code file paths
+        .with_file(true)
+        // Display source code line numbers
+        .with_line_number(true)
+        // Display the thread ID an event was recorded on
+        .with_thread_ids(true)
+        // Don't display the event's target (module path)
+        .with_target(false)
+        .with_max_level(tracing::Level::TRACE)
+        // Build the subscriber
+        .finish();
+
+    // Set the subscriber as the default
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+
+    Ok(())
+}
+
+async fn log_payload(str: &str, data: &Vec<u8>) {
+    let mut formatted_payload = String::new();
+
+    formatted_payload.push_str(str);
+    for (index, value) in data.iter().enumerate() {
+        // Append the hexadecimal representation of the byte
+        formatted_payload.push_str(&format!("{:02x?}", value));
+
+        if (index + 1) % 8 == 0 {
+            // Start a new line after every 8 values
+            formatted_payload.push('\n');
+        } else {
+            // Add a space between bytes
+            formatted_payload.push(' ');
+        }
+    }
+
+    // Ensure a new line at the end if the vector length is not a multiple of 8
+    if data.len() % 8 != 0 {
+        formatted_payload.push('\n');
+    }
+
+    // Log the entire formatted payload
+    tracing::trace!("{}", formatted_payload);
+}

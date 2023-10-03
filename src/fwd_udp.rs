@@ -15,7 +15,21 @@ const PINECONE_UDP_MCAST_ADDR: Ipv6Addr =
 const PINECONE_UDP_MCAST_PORT: u16 = 60606;
 const PINECONE_UDP_MCAST_ADDR_PORT_STR: &str = "ff02::114:60606";
 
-pub fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
+/// Returns udp socket from name of network interface
+///
+/// # Arguments
+///
+/// * `interface_name` - A string slice that holds the name of the network interface
+///
+/// # Examples
+///
+/// ```
+///  
+///
+///
+///    let udp_socket= udp_ipv6_init("eth0");
+/// ```
+fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
     // let ipv6_addr = Ipv6Addr::from_str(ipv6_str).expect("Failed to parse IPv6 address");
     let ipv6_addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0);
 
@@ -74,6 +88,19 @@ fn get_udpsock_with_mcastv6_opts(
     Ok(socket.into())
 }
 
+/// It starts pinecone udp multicast functionality
+///
+/// # Arguments
+///
+/// * `shared_state` - shared data instance between tasks
+///
+/// # Examples
+///
+/// ```
+///    use element_packet_forwarder::fwd_udp;
+///    let shared_state = SharedState::new().await;
+///    let res = fwd_udp::start_pinecone_udp_mcast(shared_state).await;
+/// ```
 pub async fn start_pinecone_udp_mcast(
     shared_state: SharedState,
 ) -> Result<(), Box<dyn std::error::Error>> {

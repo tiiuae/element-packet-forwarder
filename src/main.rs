@@ -4,7 +4,6 @@ use element_packet_forwarder::start_proxy;
 use element_packet_forwarder::start_tracing_engine;
 use futures::join;
 use std::error::Error;
-// Import the hex crate
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let shared_state = SharedState::new().await;

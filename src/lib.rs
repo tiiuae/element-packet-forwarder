@@ -10,7 +10,7 @@
 //!
 //! <br>
 //!
-//! A Rust project.
+//! Packet forwarder app to run element app on ghaf project.
 //!
 //! <br>
 //!
@@ -21,16 +21,16 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     println!("Hello world!");
+//!     let shared_state = SharedState::new().await;
 //!
-//!     Ok(())
+//!    let (_pinecone_res, _proxy_res, _tracing_res) = join!(
+//!         fwd_udp::start_pinecone_udp_mcast(shared_state.clone()),
+//!         start_proxy(shared_state.clone()),
+//!         start_tracing_engine()
+//!     );
 //! }
 //! ```
 //!
-//! ## Examples
-//!
-//! You can check out sample usage of this crate in the [examples/](https://github.com/enesoztrk/element-packet-forwarder/tree/main/examples)
-//! folder in the project repo on GitHub.
 //!
 //! ## Readme Docs
 //!
@@ -43,8 +43,9 @@
 
 /// command line parsing and handling module
 pub mod cli;
-/// udp communication module
+/// forwarding udp packets between networks module
 pub mod fwd_udp;
+/// Shared data between tasks module
 pub mod shared_state;
 use crate::shared_state::*;
 use tokio::time::{sleep, Duration};

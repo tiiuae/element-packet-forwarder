@@ -20,7 +20,7 @@ struct PortIpPort {
 }
 
 type DataqT = VecDeque<Vec<u8>>;
-const UDP_PINECONE_PAYLOAD_SIZE: usize = 96;
+const UDP_PINECONE_PAYLOAD_SIZE: usize = 34;
 type PineconeUdpDataT = Vec<u8>;
 #[derive(Debug, PartialEq, Clone)]
 struct TcpData {

@@ -1,173 +1,19 @@
-use element_packet_forwarder::cli;
 use element_packet_forwarder::fwd_udp;
 use element_packet_forwarder::shared_state::*;
-
+use element_packet_forwarder::start_proxy;
+use element_packet_forwarder::start_tracing_engine;
+use futures::join;
 use std::error::Error;
-use std::net::Ipv6Addr;
-use std::net::SocketAddrV6;
-use std::sync::Arc;
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
-use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
 // Import the hex crate
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Start configuring a `fmt` subscriber
-    let subscriber = tracing_subscriber::fmt()
-        // Use a more compact, abbreviated log format
-        .compact()
-        // Display source code file paths
-        .with_file(true)
-        // Display source code line numbers
-        .with_line_number(true)
-        // Display the thread ID an event was recorded on
-        .with_thread_ids(true)
-        // Don't display the event's target (module path)
-        .with_target(false)
-        .with_max_level(tracing::Level::TRACE)
-        // Build the subscriber
-        .finish();
-
-    // Set the subscriber as the default
-    tracing::subscriber::set_global_default(subscriber).unwrap();
-
-    //create shared state struct
     let shared_state = SharedState::new().await;
 
-    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::One);
-    let udp_pinecone_mcast_sock_recv = Arc::new(udp_pinecone_mcast_sock);
-    let udp_pinecone_mcast_sock_send = udp_pinecone_mcast_sock_recv.clone();
-
-    let state = shared_state.clone();
-    let udp_pinecone_mcast_nw_one_send_handle = tokio::spawn(async move {
-        udp_pinecone_send_nw_one(udp_pinecone_mcast_sock_send, state).await;
-    });
-
-    /* let state=shared_state.clone();
-    //receiver task for network one
-    let udp_pinecone_mcast_nw_one_recv_handle = tokio::spawn(async move {
-        udp_pinecone_receive_nw_one(udp_pinecone_mcast_sock_recv,state).await;
-    });*/
-
-    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::Two);
-    let udp_pinecone_mcast_sock_recv = Arc::new(udp_pinecone_mcast_sock);
-    let udp_pinecone_mcast_sock_send = udp_pinecone_mcast_sock_recv.clone();
-
-    /*let state=shared_state.clone();
-    //sender task for network two
-    let udp_pinecone_mcast_nw_two_send_handle = tokio::spawn(async move {
-        udp_pinecone_send_nw_two(udp_pinecone_mcast_sock_send,state).await;
-    });*/
-
-    let state = shared_state.clone();
-    //receiver task for network two
-    let udp_pinecone_mcast_nw_two_recv_handle = tokio::spawn(async move {
-        udp_pinecone_receive_nw_two(udp_pinecone_mcast_sock_recv, state).await;
-    });
-
-    let state = shared_state.clone();
-    //proxy task to check and forward data packets
-    let proxy_task_handle = tokio::spawn(async move {
-        proxy_process(state).await;
-    });
-
-    /*udp_pinecone_mcast_nw_one_recv_handle
-    .await
-    .expect("udp pinecone receive from network one mcast function error");*/
-    udp_pinecone_mcast_nw_one_send_handle
-        .await
-        .expect("udp pinecone send to network one mcast function error");
-    udp_pinecone_mcast_nw_two_recv_handle
-        .await
-        .expect("udp pinecone receive from network two mcast function error");
-    /* udp_pinecone_mcast_nw_two_send_handle
-    .await
-    .expect("udp pinecone send to network two mcast function error");*/
-
-    proxy_task_handle.await.expect("proxy task function error");
+    let (_pinecone_res, _proxy_res, _tracing_res) = join!(
+        fwd_udp::start_pinecone_udp_mcast(shared_state.clone()),
+        start_proxy(shared_state.clone()),
+        start_tracing_engine()
+    );
 
     Ok(())
-}
-
-/// Send bytes to Udp Socket from  nw two
-async fn udp_pinecone_send_nw_one(tx_socket: Arc<tokio::net::UdpSocket>, state: SharedState) {
-    loop {
-        let data = state.get_udp_incoming_pinecone_data(1).await;
-
-        if data.is_some() {
-            let _ = tx_socket.send_to(&data.unwrap(), "ff02::114:60606").await;
-        }
-
-        sleep(Duration::from_millis(1000)).await;
-    }
-}
-
-/// Receive bytes from Udp Socket from nw two
-async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, state: SharedState) {
-    let mut buf = vec![0; 1024];
-    loop {
-        match rx_socket.recv_from(&mut buf).await {
-            Ok((size, peer)) => {
-                let data = buf[..size].to_vec();
-                log_payload(
-                    &format!(
-                        "[2]Udp data received from {}, size{},payload:\n",
-                        peer.ip(),
-                        size
-                    ),
-                    &data,
-                )
-                .await;
-                state.insert_udp_incoming_pinecone_data(1, data).await;
-            }
-            Err(e) => {
-                tracing::error!("Error receiving data: {:?}", e);
-            }
-        }
-    }
-}
-
-async fn proxy_process(state: SharedState) {
-    loop {
-        tracing::debug!("Hey, I am proxy process");
-
-        sleep(Duration::from_millis(1000)).await;
-    }
-}
-
-async fn log_payload(str: &str, data: &Vec<u8>) {
-    let mut formatted_payload = String::new();
-
-    formatted_payload.push_str(str);
-    for (index, value) in data.iter().enumerate() {
-        // Append the hexadecimal representation of the byte
-        formatted_payload.push_str(&format!("{:02x?}", value));
-
-        if (index + 1) % 8 == 0 {
-            // Start a new line after every 8 values
-            formatted_payload.push('\n');
-        } else {
-            // Add a space between bytes
-            formatted_payload.push(' ');
-        }
-    }
-
-    // Ensure a new line at the end if the vector length is not a multiple of 8
-    if data.len() % 8 != 0 {
-        formatted_payload.push('\n');
-    }
-
-    // Log the entire formatted payload
-    tracing::trace!("{}", formatted_payload);
-}
-
-fn create_pinecone_udp_sock(nw_id: NwId) -> tokio::net::UdpSocket {
-    let std_udp_sock: std::net::UdpSocket = if nw_id == NwId::One {
-        fwd_udp::udp_ipv6_init(cli::get_if1_name().unwrap())
-    } else {
-        fwd_udp::udp_ipv6_init(cli::get_if2_name().unwrap())
-    };
-
-    UdpSocket::from_std(std_udp_sock).expect("from std err")
 }

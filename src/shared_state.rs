@@ -258,7 +258,7 @@ impl SharedState {
                 vec![0; UDP_PINECONE_PAYLOAD_SIZE],
             ));
         }
-        tracing::error!("udp incoming pinecone data is not available or consumed");
+        tracing::trace!("udp incoming pinecone data is not available or consumed");
 
         None
     }

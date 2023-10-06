@@ -1,19 +1,19 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::DerefMut;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, Ordering, AtomicBool, AtomicU8};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 const TOTAL_NUM_NW: usize = 2;
 
-#[derive(PartialEq)]
+#[derive(PartialEq,Clone,Debug,Copy)]
 pub enum NwId {
     One,
     Two,
 }
 
-#[derive(Eq, Hash, PartialEq, Debug, Clone)]
-struct PortIpPort {
+#[derive(Eq, Hash, PartialEq, Debug, Clone,Copy)]
+pub struct PortIpPort {
     pub nw_one_ip: IpAddr,
     pub nw_one_src_port: u16,
     pub nw_two_src_port: u16,
@@ -41,14 +41,19 @@ pub struct SharedState {
     /// tcp outgoing data and route info
     tcp_con_out: [Arc<Mutex<TcpFwdRouteMap>>; TOTAL_NUM_NW],
 
-    /// tcp server port for network one
+    /// tcp pinecone server port for network one
     tcp_src_port_nw_one: Arc<AtomicU16>,
 
+    ///tcp pinecone server terminate signal for network one 
+    is_tcp_server_termination_signal_got_nw_one:Arc<AtomicBool>,
     /// udp pinecone incoming packets handling
     udp_pinecone_in: Vec<Arc<Mutex<PineconeUdpDataT>>>,
 
     /// udp pinecone outgoing packets handling
     udp_pinecone_out: Vec<Arc<Mutex<PineconeUdpDataT>>>,
+
+    /// is udp pinecone  data exchange still available?
+    udp_pinecone_network_conn_tick: [Arc<AtomicU8>;TOTAL_NUM_NW]
 }
 
 impl SharedState {
@@ -69,12 +74,14 @@ impl SharedState {
                     .for_each(|_| v.push(Arc::new(Mutex::new(vec![0; UDP_PINECONE_PAYLOAD_SIZE]))));
                 v
             },
+            udp_pinecone_network_conn_tick:Default::default(),
+            is_tcp_server_termination_signal_got_nw_one:Arc::new(AtomicBool::new(false))
         }
     }
 
     pub async fn insert_tcp_incoming_data(
         &self,
-        nw_id: usize,
+        nw_id: NwId,
         nw_one_ip: IpAddr,
         nw_one_src_port: u16,
         nw_two_src_port: u16,
@@ -85,8 +92,8 @@ impl SharedState {
             nw_one_src_port,
             nw_two_src_port,
         };
-
-        let mut tcp_con = self.tcp_con_in[nw_id].lock().await;
+        let index=nw_id as usize;
+        let mut tcp_con = self.tcp_con_in[index].lock().await;
         match tcp_con.get_mut(&key) {
             None => {
                 let mut new_dataq = VecDeque::new();
@@ -97,7 +104,7 @@ impl SharedState {
                 };
 
                 if tcp_con.insert(key, in_data).is_none() {
-                    tracing::trace!("First data is added to shared state,nw_id:{}", nw_id);
+                    tracing::trace!("First data is added to shared state,nw_id:{}", index);
                 }
             }
             Some(new_message) => {
@@ -207,12 +214,12 @@ impl SharedState {
     }
 
     // Get the tcp source port number field
-    pub async fn get_tcp_src_port_nw_one(&self) -> u16 {
+    pub async fn get_tcp_src_port_nw_one(&self,nw_id: NwId) -> u16 {
         self.tcp_src_port_nw_one.load(Ordering::Relaxed)
     }
 
     // Set the tcp source port number field
-    fn set_tcp_src_port_nw_one(&self, udp_pinecone_in_data: &[u8]) {
+    pub fn set_tcp_src_port_nw_one(&self, udp_pinecone_in_data: &[u8]) {
         let port_num: u16 = u16::from_le_bytes([
             udp_pinecone_in_data[UDP_PINECONE_PAYLOAD_SIZE - 1],
             udp_pinecone_in_data[UDP_PINECONE_PAYLOAD_SIZE - 2],
@@ -258,10 +265,56 @@ impl SharedState {
                 vec![0; UDP_PINECONE_PAYLOAD_SIZE],
             ));
         }
-        tracing::trace!("udp incoming pinecone data is not available or consumed");
+        tracing::error!("udp incoming pinecone data is not available or consumed");
 
         None
     }
+
+    pub async fn is_udp_pinecone_connected(&self, nw_id: usize)->bool{
+
+        const MAX_TICK:u8=5;
+        let  udp_pinecone_tick: u8 =  self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
+
+        udp_pinecone_tick<MAX_TICK
+
+    }
+
+    pub async fn udp_pinecone_feed_tick(&self,nw_id: usize){
+
+        let udp_pinecone_tick: u8;
+        {
+            udp_pinecone_tick= self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
+
+        }
+
+            self.udp_pinecone_network_conn_tick[nw_id].store(udp_pinecone_tick+1,Ordering::Relaxed);
+    }
+
+
+    pub async fn udp_pinecone_reset_tick(&self,nw_id: usize){
+
+      self.udp_pinecone_network_conn_tick[nw_id].store(0,Ordering::Relaxed);
+    }
+
+
+    pub async fn is_tcp_server_pinecone_term_signal_available(&self)->bool{
+        let is_available;
+        {
+            is_available = self.is_tcp_server_termination_signal_got_nw_one.load(Ordering::Relaxed);
+
+        }
+
+        if is_available {
+            self.is_tcp_server_termination_signal_got_nw_one.store(false,Ordering::Relaxed);
+        }
+
+        is_available
+    }
+
+    pub async fn send_tcp_server_pinecone_term_signal(&self){
+        self.is_tcp_server_termination_signal_got_nw_one.store(true,Ordering::Relaxed);
+    }
+
 }
 
 #[cfg(test)]
@@ -284,7 +337,7 @@ mod tests {
         udp_data_in[UDP_PINECONE_PAYLOAD_SIZE - 1] = 0x93;
 
         state.set_tcp_src_port_nw_one(&udp_data_in);
-        let port_num_result = state.get_tcp_src_port_nw_one().await;
+        let port_num_result = state.get_tcp_src_port_nw_one(NwId::One).await;
         assert_eq!(port_num, port_num_result);
     }
 

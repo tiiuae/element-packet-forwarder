@@ -9,6 +9,7 @@ use std::net::{Ipv6Addr, SocketAddrV6};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::time::{sleep, Duration};
+use tokio::task::yield_now;
 ///ff02::114
 const PINECONE_UDP_MCAST_ADDR: Ipv6Addr =
     Ipv6Addr::new(0xff02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0114);
@@ -45,7 +46,7 @@ fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
     // Create a SocketAddrV6 variable by specifying the address and port
     let socket_addr_v6 = SocketAddrV6::new(ipv6_addr, PINECONE_UDP_MCAST_PORT, 0, ifindex);
 
-    println!("SocketAddrV6: {}", socket_addr_v6);
+    tracing::trace!("SocketAddrV6: {}", socket_addr_v6);
 
     get_udpsock_with_mcastv6_opts(
         &socket_addr_v6,
@@ -119,6 +120,8 @@ pub async fn start_pinecone_udp_mcast(
         udp_pinecone_receive_nw_one(udp_pinecone_mcast_sock_recv,state).await;
     });*/
 
+     
+
     let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::Two);
     let udp_pinecone_mcast_sock_recv = Arc::new(udp_pinecone_mcast_sock);
     let udp_pinecone_mcast_sock_send = udp_pinecone_mcast_sock_recv.clone();
@@ -138,12 +141,13 @@ pub async fn start_pinecone_udp_mcast(
     /*udp_pinecone_mcast_nw_one_recv_handle
     .await
     .expect("udp pinecone receive from network one mcast function error");*/
-    udp_pinecone_mcast_nw_one_send_handle
-        .await
-        .expect("udp pinecone send to network one mcast function error");
+ 
     udp_pinecone_mcast_nw_two_recv_handle
         .await
         .expect("udp pinecone receive from network two mcast function error");
+    udp_pinecone_mcast_nw_one_send_handle
+    .await
+    .expect("udp pinecone send to network one mcast function error");
     /* udp_pinecone_mcast_nw_two_send_handle
     .await
     .expect("udp pinecone send to network two mcast function error");*/
@@ -170,9 +174,13 @@ async fn udp_pinecone_send_nw_one(tx_socket: Arc<tokio::net::UdpSocket>, state: 
             let _ = tx_socket
                 .send_to(&data.unwrap(), PINECONE_UDP_MCAST_ADDR_PORT_STR)
                 .await;
+            state.udp_pinecone_reset_tick(1).await;
+        }
+        else{
+            state.udp_pinecone_feed_tick(1).await;
         }
 
-        sleep(Duration::from_millis(1000)).await;
+        sleep(Duration::from_millis(1050)).await;
     }
 }
 
@@ -193,6 +201,7 @@ async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, stat
                 )
                 .await;
                 state.insert_udp_incoming_pinecone_data(1, data).await;
+                buf=vec![0;1024];
             }
             Err(e) => {
                 tracing::error!("Error receiving data: {:?}", e);

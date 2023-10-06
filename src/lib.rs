@@ -43,10 +43,13 @@
 
 /// command line parsing and handling module
 pub mod cli;
+/// forwarding tcp packets between networks module
+pub mod fwd_tcp;
 /// forwarding udp packets between networks module
 pub mod fwd_udp;
 /// Shared data between tasks module
 pub mod shared_state;
+
 use crate::shared_state::*;
 use tokio::time::{sleep, Duration};
 
@@ -61,9 +64,12 @@ pub async fn start_proxy(state: SharedState) -> Result<(), Box<dyn std::error::E
 }
 
 async fn proxy_process(state: SharedState) {
+    
+    tracing::error!("Proxy process has started");
+    
     loop {
-        tracing::debug!("Hey, I am proxy process");
-
+        let is_connected=state.is_udp_pinecone_connected(1).await;
+        tracing::debug!("Hey, I am proxy process:{}",is_connected);
         sleep(Duration::from_millis(1000)).await;
     }
 }

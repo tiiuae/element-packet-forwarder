@@ -42,6 +42,7 @@ nix = {version = "^0.27",features = ["net"]}
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
 futures = "0.3.28"
+tokio-util="0.7.9"
 [dev-dependencies]
 tracing-test = "0.2.4"
 static_assertions = "1.1.0"
@@ -62,11 +63,13 @@ version-sync = "0.9.4"
 
 ### TESTS
 [[example]]
+name = "tcp-pinecone-server-tokio-console"
+path = "examples/tcp_pinecone_server_tokio_console.rs"
+
+[[example]]
 name = "tcp-pinecone-server"
 path = "examples/tcp_pinecone_server.rs"
 
-[build]
-rustflags = ["--cfg", "tokio_unstable"]
 
 [package.metadata.scripts]
 run = "cargo run"

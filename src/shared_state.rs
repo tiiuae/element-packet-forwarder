@@ -1,18 +1,18 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 use std::ops::DerefMut;
-use std::sync::atomic::{AtomicU16, Ordering, AtomicBool, AtomicU8};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 const TOTAL_NUM_NW: usize = 2;
 
-#[derive(PartialEq,Clone,Debug,Copy)]
+#[derive(PartialEq, Clone, Debug, Copy)]
 pub enum NwId {
     One,
     Two,
 }
 
-#[derive(Eq, Hash, PartialEq, Debug, Clone,Copy)]
+#[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 pub struct PortIpPort {
     pub nw_one_ip: IpAddr,
     pub nw_one_src_port: u16,
@@ -44,8 +44,8 @@ pub struct SharedState {
     /// tcp pinecone server port for network one
     tcp_src_port_nw_one: Arc<AtomicU16>,
 
-    ///tcp pinecone server terminate signal for network one 
-    is_tcp_server_termination_signal_got_nw_one:Arc<AtomicBool>,
+    ///tcp pinecone server terminate signal for network one
+    is_tcp_server_termination_signal_got_nw_one: Arc<AtomicBool>,
     /// udp pinecone incoming packets handling
     udp_pinecone_in: Vec<Arc<Mutex<PineconeUdpDataT>>>,
 
@@ -53,7 +53,7 @@ pub struct SharedState {
     udp_pinecone_out: Vec<Arc<Mutex<PineconeUdpDataT>>>,
 
     /// is udp pinecone  data exchange still available?
-    udp_pinecone_network_conn_tick: [Arc<AtomicU8>;TOTAL_NUM_NW]
+    udp_pinecone_network_conn_tick: [Arc<AtomicU8>; TOTAL_NUM_NW],
 }
 
 impl SharedState {
@@ -74,27 +74,20 @@ impl SharedState {
                     .for_each(|_| v.push(Arc::new(Mutex::new(vec![0; UDP_PINECONE_PAYLOAD_SIZE]))));
                 v
             },
-            udp_pinecone_network_conn_tick:Default::default(),
-            is_tcp_server_termination_signal_got_nw_one:Arc::new(AtomicBool::new(false))
+            udp_pinecone_network_conn_tick: Default::default(),
+            is_tcp_server_termination_signal_got_nw_one: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub async fn insert_tcp_incoming_data(
         &self,
         nw_id: NwId,
-        nw_one_ip: IpAddr,
-        nw_one_src_port: u16,
-        nw_two_src_port: u16,
+        route_info: PortIpPort,
         in_data: Vec<u8>,
     ) -> bool {
-        let key: PortIpPort = PortIpPort {
-            nw_one_ip,
-            nw_one_src_port,
-            nw_two_src_port,
-        };
-        let index=nw_id as usize;
+        let index = nw_id as usize;
         let mut tcp_con = self.tcp_con_in[index].lock().await;
-        match tcp_con.get_mut(&key) {
+        match tcp_con.get_mut(&route_info) {
             None => {
                 let mut new_dataq = VecDeque::new();
                 new_dataq.push_back(in_data);
@@ -103,7 +96,7 @@ impl SharedState {
                     is_connected: true,
                 };
 
-                if tcp_con.insert(key, in_data).is_none() {
+                if tcp_con.insert(route_info, in_data).is_none() {
                     tracing::trace!("First data is added to shared state,nw_id:{}", index);
                 }
             }
@@ -116,20 +109,13 @@ impl SharedState {
 
     pub async fn insert_tcp_outgoing_data(
         &self,
-        nw_id: usize,
-        nw_one_ip: IpAddr,
-        nw_one_src_port: u16,
-        nw_two_src_port: u16,
+        nw_id: NwId,
+        route_info: PortIpPort,
         in_data: Vec<u8>,
     ) -> bool {
-        let key: PortIpPort = PortIpPort {
-            nw_one_ip,
-            nw_one_src_port,
-            nw_two_src_port,
-        };
-
-        let mut tcp_con = self.tcp_con_out[nw_id].lock().await;
-        match tcp_con.get_mut(&key) {
+        let index = nw_id as usize;
+        let mut tcp_con = self.tcp_con_out[index].lock().await;
+        match tcp_con.get_mut(&route_info) {
             None => {
                 let mut new_dataq = VecDeque::new();
                 new_dataq.push_back(in_data);
@@ -138,8 +124,8 @@ impl SharedState {
                     is_connected: true,
                 };
 
-                if tcp_con.insert(key, in_data).is_none() {
-                    tracing::trace!("First data is added to shared state,nw_id:{}", nw_id);
+                if tcp_con.insert(route_info, in_data).is_none() {
+                    tracing::trace!("First data is added to shared state,nw_id:{}", nw_id as u16);
                 }
             }
             Some(new_message) => {
@@ -169,25 +155,26 @@ impl SharedState {
             }
         }
 
-        tracing::error!(
+        /*tracing::debug!(
             "There is no incoming data ->nw_id:{},route_info:{:?}",
             nw_id,
             key
-        );
+        );*/
         None
     }
 
     pub async fn get_tcp_incoming_data(
         &self,
-        nw_id: usize,
+        nw_id: NwId,
         nw_one_ip: IpAddr,
         nw_one_src_port: u16,
         nw_two_src_port: u16,
     ) -> Option<Vec<u8>> {
-        let mut tcp_con = self.tcp_con_in[nw_id].lock().await;
+        let index = nw_id as usize;
+        let mut tcp_con = self.tcp_con_in[index].lock().await;
 
         self.get_tcp_fwd_route_data(
-            nw_id,
+            index,
             tcp_con.deref_mut(),
             nw_one_ip,
             nw_one_src_port,
@@ -197,24 +184,23 @@ impl SharedState {
 
     pub async fn get_tcp_outgoing_data(
         &self,
-        nw_id: usize,
-        nw_one_ip: IpAddr,
-        nw_one_src_port: u16,
-        nw_two_src_port: u16,
+        nw_id: NwId,
+        route_info: PortIpPort,
     ) -> Option<Vec<u8>> {
-        let mut tcp_con = self.tcp_con_out[nw_id].lock().await;
+        let index = nw_id as usize;
+        let mut tcp_con = self.tcp_con_out[index].lock().await;
 
         self.get_tcp_fwd_route_data(
-            nw_id,
+            index,
             tcp_con.deref_mut(),
-            nw_one_ip,
-            nw_one_src_port,
-            nw_two_src_port,
+            route_info.nw_one_ip,
+            route_info.nw_one_src_port,
+            route_info.nw_two_src_port,
         )
     }
 
     // Get the tcp source port number field
-    pub async fn get_tcp_src_port_nw_one(&self,nw_id: NwId) -> u16 {
+    pub async fn get_tcp_src_port_nw_one(&self, nw_id: NwId) -> u16 {
         self.tcp_src_port_nw_one.load(Ordering::Relaxed)
     }
 
@@ -270,51 +256,47 @@ impl SharedState {
         None
     }
 
-    pub async fn is_udp_pinecone_connected(&self, nw_id: usize)->bool{
+    pub async fn is_udp_pinecone_connected(&self, nw_id: usize) -> bool {
+        const MAX_TICK: u8 = 5;
+        let udp_pinecone_tick: u8 =
+            self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
 
-        const MAX_TICK:u8=5;
-        let  udp_pinecone_tick: u8 =  self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
-
-        udp_pinecone_tick<MAX_TICK
-
+        udp_pinecone_tick < MAX_TICK
     }
 
-    pub async fn udp_pinecone_feed_tick(&self,nw_id: usize){
-
+    pub async fn udp_pinecone_feed_tick(&self, nw_id: usize) {
         let udp_pinecone_tick: u8;
         {
-            udp_pinecone_tick= self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
-
+            udp_pinecone_tick = self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
         }
 
-            self.udp_pinecone_network_conn_tick[nw_id].store(udp_pinecone_tick+1,Ordering::Relaxed);
+        self.udp_pinecone_network_conn_tick[nw_id].store(udp_pinecone_tick + 1, Ordering::Relaxed);
     }
 
-
-    pub async fn udp_pinecone_reset_tick(&self,nw_id: usize){
-
-      self.udp_pinecone_network_conn_tick[nw_id].store(0,Ordering::Relaxed);
+    pub async fn udp_pinecone_reset_tick(&self, nw_id: usize) {
+        self.udp_pinecone_network_conn_tick[nw_id].store(0, Ordering::Relaxed);
     }
 
-
-    pub async fn is_tcp_server_pinecone_term_signal_available(&self)->bool{
+    pub async fn is_tcp_server_pinecone_term_signal_available(&self) -> bool {
         let is_available;
         {
-            is_available = self.is_tcp_server_termination_signal_got_nw_one.load(Ordering::Relaxed);
-
+            is_available = self
+                .is_tcp_server_termination_signal_got_nw_one
+                .load(Ordering::Relaxed);
         }
 
         if is_available {
-            self.is_tcp_server_termination_signal_got_nw_one.store(false,Ordering::Relaxed);
+            self.is_tcp_server_termination_signal_got_nw_one
+                .store(false, Ordering::Relaxed);
         }
 
         is_available
     }
 
-    pub async fn send_tcp_server_pinecone_term_signal(&self){
-        self.is_tcp_server_termination_signal_got_nw_one.store(true,Ordering::Relaxed);
+    pub async fn send_tcp_server_pinecone_term_signal(&self) {
+        self.is_tcp_server_termination_signal_got_nw_one
+            .store(true, Ordering::Relaxed);
     }
-
 }
 
 #[cfg(test)]
@@ -345,7 +327,7 @@ mod tests {
     #[traced_test]
     async fn incoming_tcp_data_to_nw_one_1_first_data_insert() {
         let state = SharedState::new().await;
-        const NWID: usize = 0;
+        const NWID: NwId = NwId::One;
 
         let tcp_route_info = PortIpPort {
             nw_one_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)),
@@ -355,16 +337,10 @@ mod tests {
 
         let new_data = vec![2, 5, 8, 9, 0, 2, 4];
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-                new_data.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
-        let tcp_con = state.tcp_con_in[NWID].lock().await;
+        let tcp_con = state.tcp_con_in[NWID as usize].lock().await;
         println!("tcp_con key:{:?}", tcp_con);
         assert_eq!(tcp_con.contains_key(&tcp_route_info), true);
         assert_eq!(
@@ -382,7 +358,7 @@ mod tests {
     #[traced_test]
     async fn incoming_tcp_data_to_nw_one_with_multiple_route_first_data_insert() {
         let state = SharedState::new().await;
-        const NWID: usize = 0;
+        const NWID: NwId = NwId::One;
         let tcp_route_info = PortIpPort {
             nw_one_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)),
             nw_one_src_port: 25212,
@@ -400,26 +376,14 @@ mod tests {
         let new_data_2 = vec![1, 4, 2, 6, 2, 0, 5];
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-                new_data.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info_2.nw_one_ip,
-                tcp_route_info_2.nw_one_src_port,
-                tcp_route_info_2.nw_two_src_port,
-                new_data_2.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info_2, new_data_2.clone())
             .await;
 
-        let tcp_con = state.tcp_con_in[NWID].lock().await;
+        let tcp_con = state.tcp_con_in[NWID as usize].lock().await;
 
         println!("tcp_con key:{:?}", tcp_con);
         assert_eq!(tcp_con.contains_key(&tcp_route_info), true);
@@ -447,7 +411,7 @@ mod tests {
     #[traced_test]
     async fn incoming_tcp_data_to_nw_one_multiple_data_insert_for_same_route() {
         let state = SharedState::new().await;
-        const NWID: usize = 0;
+        const NWID: NwId = NwId::One;
 
         let tcp_route_info = PortIpPort {
             nw_one_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)),
@@ -459,26 +423,14 @@ mod tests {
         let new_data_2 = vec![1, 2, 4, 2];
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-                new_data.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-                new_data_2.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data_2.clone())
             .await;
 
-        let tcp_con = state.tcp_con_in[NWID].lock().await;
+        let tcp_con = state.tcp_con_in[NWID as usize].lock().await;
         println!("tcp_con key:{:?}", tcp_con);
         assert_eq!(tcp_con.contains_key(&tcp_route_info), true);
         assert_eq!(
@@ -504,7 +456,7 @@ mod tests {
     #[traced_test]
     async fn incoming_tcp_data_to_nw_two_1_first_data_insert() {
         let state = SharedState::new().await;
-        const NWID: usize = 1;
+        const NWID: NwId = NwId::Two;
         let tcp_route_info = PortIpPort {
             nw_one_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15)),
             nw_one_src_port: 11,
@@ -513,16 +465,10 @@ mod tests {
 
         let new_data = vec![1, 5, 24, 2];
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-                new_data.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
-        let tcp_con = state.tcp_con_in[NWID].lock().await;
+        let tcp_con = state.tcp_con_in[NWID as usize].lock().await;
         println!("tcp_con key:{:?}", tcp_con);
         assert_eq!(tcp_con.contains_key(&tcp_route_info), true);
         assert_eq!(
@@ -540,7 +486,7 @@ mod tests {
     #[traced_test]
     async fn incoming_tcp_data_to_nw_one_1_get_data() {
         let state = SharedState::new().await;
-        const NWID: usize = 0;
+        const NWID: NwId = NwId::One;
 
         let tcp_route_info = PortIpPort {
             nw_one_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)),
@@ -560,13 +506,7 @@ mod tests {
         assert_eq!(None, got_data);
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
-                new_data.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
         let got_data: Option<Vec<u8>> = state
@@ -585,7 +525,7 @@ mod tests {
     #[traced_test]
     async fn incoming_tcp_data_to_nw_one_multiple_get_data() {
         let state = SharedState::new().await;
-        const NWID: usize = 0;
+        const NWID: NwId = NwId::One;
 
         let tcp_route_info = PortIpPort {
             nw_one_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)),
@@ -597,68 +537,50 @@ mod tests {
         let new_data_3 = vec![0, 3, 1, 9, 8, 7, 7, 9, 0, 4];
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
-                new_data.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
-                new_data_2.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data_2.clone())
             .await;
 
         state
-            .insert_tcp_incoming_data(
-                NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
-                new_data_3.clone(),
-            )
+            .insert_tcp_incoming_data(NWID, tcp_route_info, new_data_3.clone())
             .await;
 
         let got_data: Option<Vec<u8>> = state
             .get_tcp_incoming_data(
                 NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
+                tcp_route_info.nw_one_ip,
+                tcp_route_info.nw_one_src_port,
+                tcp_route_info.nw_two_src_port,
             )
             .await;
         assert_eq!(new_data, got_data.unwrap());
         let got_data: Option<Vec<u8>> = state
             .get_tcp_incoming_data(
                 NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
+                tcp_route_info.nw_one_ip,
+                tcp_route_info.nw_one_src_port,
+                tcp_route_info.nw_two_src_port,
             )
             .await;
         assert_eq!(new_data_2, got_data.unwrap());
         let got_data: Option<Vec<u8>> = state
             .get_tcp_incoming_data(
                 NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
+                tcp_route_info.nw_one_ip,
+                tcp_route_info.nw_one_src_port,
+                tcp_route_info.nw_two_src_port,
             )
             .await;
         assert_eq!(new_data_3, got_data.unwrap());
         let got_data: Option<Vec<u8>> = state
             .get_tcp_incoming_data(
                 NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
+                tcp_route_info.nw_one_ip,
+                tcp_route_info.nw_one_src_port,
+                tcp_route_info.nw_two_src_port,
             )
             .await;
         assert_eq!(None, got_data);
@@ -668,7 +590,7 @@ mod tests {
     #[traced_test]
     async fn outgoing_tcp_data_to_nw_two_1_first_data_insert() {
         let state = SharedState::new().await;
-        const NWID: usize = 1;
+        const NWID: NwId = NwId::One;
         let tcp_route_info = PortIpPort {
             nw_one_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 10, 15)),
             nw_one_src_port: 11,
@@ -677,16 +599,10 @@ mod tests {
 
         let new_data = vec![1, 5, 24, 2];
         state
-            .insert_tcp_outgoing_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-                new_data.clone(),
-            )
+            .insert_tcp_outgoing_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
-        let tcp_con = state.tcp_con_out[NWID].lock().await;
+        let tcp_con = state.tcp_con_out[NWID as usize].lock().await;
         println!("tcp_con key:{:?}", tcp_con);
         assert_eq!(tcp_con.contains_key(&tcp_route_info), true);
         assert_eq!(

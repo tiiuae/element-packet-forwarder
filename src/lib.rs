@@ -17,7 +17,12 @@
 //! ## Usage
 //!
 //! ```no_run
-//! use element_packet_forwarder::*;
+//! use element_packet_forwarder::fwd_udp;
+//! use element_packet_forwarder::shared_state::*;
+//! use element_packet_forwarder::start_proxy;
+//! use element_packet_forwarder::start_tracing_engine;
+//! use futures::join;
+//! use std::error::Error;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,6 +33,8 @@
 //!         start_proxy(shared_state.clone()),
 //!         start_tracing_engine()
 //!     );
+//!   Ok(())
+//!
 //! }
 //! ```
 //!
@@ -64,12 +71,11 @@ pub async fn start_proxy(state: SharedState) -> Result<(), Box<dyn std::error::E
 }
 
 async fn proxy_process(state: SharedState) {
-    
     tracing::error!("Proxy process has started");
-    
+
     loop {
-        let is_connected=state.is_udp_pinecone_connected(1).await;
-        tracing::debug!("Hey, I am proxy process:{}",is_connected);
+        let is_connected = state.is_udp_pinecone_connected(1).await;
+        tracing::debug!("Hey, I am proxy process:{}", is_connected);
         sleep(Duration::from_millis(1000)).await;
     }
 }

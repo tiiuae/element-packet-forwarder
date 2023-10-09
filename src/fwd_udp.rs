@@ -8,28 +8,14 @@ use std::ffi::CString;
 use std::net::{Ipv6Addr, SocketAddrV6};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio::time::{sleep, Duration};
 use tokio::task::yield_now;
+use tokio::time::{sleep, Duration};
 ///ff02::114
 const PINECONE_UDP_MCAST_ADDR: Ipv6Addr =
     Ipv6Addr::new(0xff02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0114);
 const PINECONE_UDP_MCAST_PORT: u16 = 60606;
 const PINECONE_UDP_MCAST_ADDR_PORT_STR: &str = "ff02::114:60606";
 
-/// Returns udp socket from name of network interface
-///
-/// # Arguments
-///
-/// * `interface_name` - A string slice that holds the name of the network interface
-///
-/// # Examples
-///
-/// ```
-///  
-///
-///
-///    let udp_socket= udp_ipv6_init("eth0");
-/// ```
 fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
     // let ipv6_addr = Ipv6Addr::from_str(ipv6_str).expect("Failed to parse IPv6 address");
     let ipv6_addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0);
@@ -95,12 +81,26 @@ fn get_udpsock_with_mcastv6_opts(
 ///
 /// * `shared_state` - shared data instance between tasks
 ///
-/// # Examples
+/// ## Usage
 ///
-/// ```
-///    use element_packet_forwarder::fwd_udp;
-///    let shared_state = SharedState::new().await;
-///    let res = fwd_udp::start_pinecone_udp_mcast(shared_state).await;
+/// ```no_run
+/// use element_packet_forwarder::fwd_udp;
+/// use element_packet_forwarder::shared_state::*;
+/// use element_packet_forwarder::start_proxy;
+/// use element_packet_forwarder::start_tracing_engine;
+/// use futures::join;
+/// use std::error::Error;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let shared_state = SharedState::new().await;
+///
+///    let _pinecone_res = join!(
+///         fwd_udp::start_pinecone_udp_mcast(shared_state.clone())
+///     );
+///   Ok(())
+///
+/// }
 /// ```
 pub async fn start_pinecone_udp_mcast(
     shared_state: SharedState,
@@ -119,8 +119,6 @@ pub async fn start_pinecone_udp_mcast(
     let udp_pinecone_mcast_nw_one_recv_handle = tokio::spawn(async move {
         udp_pinecone_receive_nw_one(udp_pinecone_mcast_sock_recv,state).await;
     });*/
-
-     
 
     let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::Two);
     let udp_pinecone_mcast_sock_recv = Arc::new(udp_pinecone_mcast_sock);
@@ -141,13 +139,13 @@ pub async fn start_pinecone_udp_mcast(
     /*udp_pinecone_mcast_nw_one_recv_handle
     .await
     .expect("udp pinecone receive from network one mcast function error");*/
- 
+
     udp_pinecone_mcast_nw_two_recv_handle
         .await
         .expect("udp pinecone receive from network two mcast function error");
     udp_pinecone_mcast_nw_one_send_handle
-    .await
-    .expect("udp pinecone send to network one mcast function error");
+        .await
+        .expect("udp pinecone send to network one mcast function error");
     /* udp_pinecone_mcast_nw_two_send_handle
     .await
     .expect("udp pinecone send to network two mcast function error");*/
@@ -175,8 +173,7 @@ async fn udp_pinecone_send_nw_one(tx_socket: Arc<tokio::net::UdpSocket>, state: 
                 .send_to(&data.unwrap(), PINECONE_UDP_MCAST_ADDR_PORT_STR)
                 .await;
             state.udp_pinecone_reset_tick(1).await;
-        }
-        else{
+        } else {
             state.udp_pinecone_feed_tick(1).await;
         }
 
@@ -201,7 +198,7 @@ async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, stat
                 )
                 .await;
                 state.insert_udp_incoming_pinecone_data(1, data).await;
-                buf=vec![0;1024];
+                buf = vec![0; 1024];
             }
             Err(e) => {
                 tracing::error!("Error receiving data: {:?}", e);

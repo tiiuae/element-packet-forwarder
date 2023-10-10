@@ -1,10 +1,13 @@
 use crate::cli;
+use crate::fwd_tcp;
 use crate::log_payload;
 use crate::shared_state::*;
 ///TODO: winapi functions should be added for windows support
 use nix::net::if_::*;
 use std::error::Error;
 use std::ffi::CString;
+use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::net::{Ipv6Addr, SocketAddrV6};
 use std::sync::Arc;
 use tokio::net::UdpSocket;
@@ -16,7 +19,7 @@ const PINECONE_UDP_MCAST_ADDR: Ipv6Addr =
 const PINECONE_UDP_MCAST_PORT: u16 = 60606;
 const PINECONE_UDP_MCAST_ADDR_PORT_STR: &str = "ff02::114:60606";
 
-fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
+async fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
     // let ipv6_addr = Ipv6Addr::from_str(ipv6_str).expect("Failed to parse IPv6 address");
     let ipv6_addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0);
 
@@ -40,10 +43,11 @@ fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
         ifindex,
         interface_name,
     )
+    .await
     .expect("Failed to set multicast options")
 }
 
-fn get_udpsock_with_mcastv6_opts(
+async fn get_udpsock_with_mcastv6_opts(
     addr: &SocketAddrV6,
     multiaddr: &Ipv6Addr,
     if_index: u32,
@@ -105,7 +109,7 @@ fn get_udpsock_with_mcastv6_opts(
 pub async fn start_pinecone_udp_mcast(
     shared_state: SharedState,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::One);
+    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::One).await;
     let udp_pinecone_mcast_sock_recv = Arc::new(udp_pinecone_mcast_sock);
     let udp_pinecone_mcast_sock_send = udp_pinecone_mcast_sock_recv.clone();
 
@@ -120,7 +124,7 @@ pub async fn start_pinecone_udp_mcast(
         udp_pinecone_receive_nw_one(udp_pinecone_mcast_sock_recv,state).await;
     });*/
 
-    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::Two);
+    let udp_pinecone_mcast_sock = create_pinecone_udp_sock(NwId::Two).await;
     let udp_pinecone_mcast_sock_recv = Arc::new(udp_pinecone_mcast_sock);
     let udp_pinecone_mcast_sock_send = udp_pinecone_mcast_sock_recv.clone();
 
@@ -153,11 +157,11 @@ pub async fn start_pinecone_udp_mcast(
     Ok(())
 }
 
-fn create_pinecone_udp_sock(nw_id: NwId) -> tokio::net::UdpSocket {
+async fn create_pinecone_udp_sock(nw_id: NwId) -> tokio::net::UdpSocket {
     let std_udp_sock: std::net::UdpSocket = if nw_id == NwId::One {
-        udp_ipv6_init(cli::get_if1_name().unwrap())
+        udp_ipv6_init(cli::get_if1_name().unwrap()).await
     } else {
-        udp_ipv6_init(cli::get_if2_name().unwrap())
+        udp_ipv6_init(cli::get_if2_name().unwrap()).await
     };
 
     UdpSocket::from_std(std_udp_sock).expect("from std err")
@@ -165,26 +169,35 @@ fn create_pinecone_udp_sock(nw_id: NwId) -> tokio::net::UdpSocket {
 
 /// Send bytes to Udp Socket from  nw two
 async fn udp_pinecone_send_nw_one(tx_socket: Arc<tokio::net::UdpSocket>, state: SharedState) {
+    let sockaddr: SocketAddr =
+        SocketAddr::new(IpAddr::V6(PINECONE_UDP_MCAST_ADDR), PINECONE_UDP_MCAST_PORT);
+
     loop {
         let data = state.get_udp_incoming_pinecone_data(1).await;
 
         if data.is_some() {
-            let _ = tx_socket
-                .send_to(&data.unwrap(), PINECONE_UDP_MCAST_ADDR_PORT_STR)
-                .await;
+            let log_data = data.clone();
+            let _ = tx_socket.send_to(&data.unwrap(), sockaddr).await;
             state.udp_pinecone_reset_tick(1).await;
+            log_payload(
+                "[1]Udp data is sent payload:\n".to_string().as_str(),
+                &log_data.unwrap(),
+            )
+            .await;
         } else {
             state.udp_pinecone_feed_tick(1).await;
         }
 
-        sleep(Duration::from_millis(1050)).await;
+        sleep(Duration::from_millis(1000)).await;
     }
 }
 
 /// Receive bytes from Udp Socket from nw two
 async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, state: SharedState) {
-    let mut buf = vec![0; 1024];
+    let mut port_num = state.get_tcp_src_port_nw_one(NwId::Two).await;
     loop {
+        let mut buf = vec![0; 96];
+
         match rx_socket.recv_from(&mut buf).await {
             Ok((size, peer)) => {
                 let data = buf[..size].to_vec();
@@ -198,7 +211,16 @@ async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, stat
                 )
                 .await;
                 state.insert_udp_incoming_pinecone_data(1, data).await;
-                buf = vec![0; 1024];
+
+                let curr_port_num = state.get_tcp_src_port_nw_one(NwId::Two).await;
+                if port_num != curr_port_num {
+                    port_num = curr_port_num;
+                    let state = state.clone();
+
+                    tokio::spawn(async move {
+                        fwd_tcp::start_tcp_pinecone_server(NwId::One, NwId::Two, state).await;
+                    });
+                }
             }
             Err(e) => {
                 tracing::error!("Error receiving data: {:?}", e);

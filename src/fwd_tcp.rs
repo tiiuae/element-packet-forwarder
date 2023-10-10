@@ -136,7 +136,7 @@ pub async fn tcp_pinecone_server_process(
                 // Asynchronously send tcp data.
                 tokio::spawn(async move {
                     sender_tcp_pinecone_process(
-                        fwd_nw_id,
+                        recv_nw_id,
                         sender_socket,
                         state_send,
                         route_conn,
@@ -173,7 +173,7 @@ pub async fn tcp_pinecone_server_process(
 }
 
 async fn sender_tcp_pinecone_process(
-    fwd_nw_id: NwId,
+    nw_id: NwId,
     mut sender_socket: WriteHalf<TcpStream>,
     state: SharedState,
     route_info: PortIpPort,
@@ -183,12 +183,13 @@ async fn sender_tcp_pinecone_process(
         if cancel_token.is_cancelled() {
             break;
         }
-        if let Some(data) = state.get_tcp_outgoing_data(fwd_nw_id, route_info).await {
+        if let Some(data) = state.get_tcp_outgoing_data(nw_id, route_info).await {
             let _ = sender_socket.write_all(&data).await;
         }
-
-        yield_now().await;
+        sleep(Duration::from_millis(100)).await;
+        //yield_now().await;
     }
+    state.remove_tcp_outgoing_route(nw_id, route_info).await;
 }
 
 async fn receive_tcp_pinecone_process(
@@ -201,7 +202,7 @@ async fn receive_tcp_pinecone_process(
 ) {
     let port_num = state.get_tcp_src_port_nw_one(NwId::One).await;
     // Create a watch channel with an initial value
-    let (mut tx, rx) = watch::channel(Vec::<u8>::new());
+    let (tx, rx) = watch::channel(false);
     let cancel_token_fwd = cancel_token.clone();
     let state_fwd = state.clone();
     tokio::spawn(async move {
@@ -240,8 +241,10 @@ async fn receive_tcp_pinecone_process(
                     buf.len(),
                     &buf[0..n]
                 );
-                //state.insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec()).await;
-                let _ = tx.send(buf[0..n].to_vec());
+                state
+                    .insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec())
+                    .await;
+                let _ = tx.send(true);
             }
             Err(e) => {
                 tracing::error!("Error reading from socket: {}", e);
@@ -254,8 +257,11 @@ async fn receive_tcp_pinecone_process(
         recv_nw_id as u16,
         route_info
     );
+    state
+        .remove_tcp_incoming_route(recv_nw_id, route_info)
+        .await;
     cancel_token.cancel();
-    tx.send(vec![0; 0])
+    tx.send(true)
         .expect("cancelling forwarding_process task error");
 }
 
@@ -265,7 +271,7 @@ async fn forwarding_process(
     fwd_nw_id: NwId,
     route_info: PortIpPort,
     shared_state: SharedState,
-    mut rx: watch::Receiver<Vec<u8>>,
+    mut rx: watch::Receiver<bool>,
     cancel_token: CancellationToken,
 ) {
     loop {
@@ -274,11 +280,20 @@ async fn forwarding_process(
                 break;
             }
 
-            let data = rx.borrow().clone();
-            if validate_data(&data, route_info) {
-                shared_state
-                    .insert_tcp_outgoing_data(fwd_nw_id, route_info, data)
-                    .await;
+            if let Some(data) = shared_state
+                .get_tcp_incoming_data(
+                    recv_nw_id,
+                    route_info.nw_one_ip,
+                    route_info.nw_one_src_port,
+                    route_info.nw_two_src_port,
+                )
+                .await
+            {
+                if validate_data(&data, route_info) {
+                    shared_state
+                        .insert_tcp_outgoing_data(fwd_nw_id, route_info, data)
+                        .await;
+                }
             }
         }
 
@@ -291,6 +306,6 @@ async fn forwarding_process(
     }
 }
 
-fn validate_data(data: &Vec<u8>, route_info: PortIpPort) -> bool {
+fn validate_data(_data: &[u8], _route_info: PortIpPort) -> bool {
     true
 }

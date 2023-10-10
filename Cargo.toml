@@ -71,6 +71,12 @@ name = "tcp-pinecone-server"
 path = "examples/tcp_pinecone_server.rs"
 
 
+[[example]]
+name = "element-packet-forwarder-tokio-console"
+path = "examples/element_packet_forwarder_tokio_console.rs"
+
+
+
 [package.metadata.scripts]
 run = "cargo run"
 check = "cargo check"

@@ -106,7 +106,12 @@ impl SharedState {
         }
         true
     }
-
+    pub async fn remove_tcp_incoming_route(&self, nw_id: NwId, route_info: PortIpPort) -> bool {
+        let index = nw_id as usize;
+        let mut tcp_con = self.tcp_con_in[index].lock().await;
+        tcp_con.remove(&route_info);
+        true
+    }
     pub async fn insert_tcp_outgoing_data(
         &self,
         nw_id: NwId,
@@ -123,7 +128,6 @@ impl SharedState {
                     dataq: new_dataq,
                     is_connected: true,
                 };
-
                 if tcp_con.insert(route_info, in_data).is_none() {
                     tracing::trace!("First data is added to shared state,nw_id:{}", nw_id as u16);
                 }
@@ -132,6 +136,13 @@ impl SharedState {
                 new_message.dataq.push_back(in_data);
             }
         }
+        true
+    }
+
+    pub async fn remove_tcp_outgoing_route(&self, nw_id: NwId, route_info: PortIpPort) -> bool {
+        let index = nw_id as usize;
+        let mut tcp_con = self.tcp_con_out[index].lock().await;
+        tcp_con.remove(&route_info);
         true
     }
 
@@ -251,15 +262,20 @@ impl SharedState {
                 vec![0; UDP_PINECONE_PAYLOAD_SIZE],
             ));
         }
-        tracing::error!("udp incoming pinecone data is not available or consumed");
+        //tracing::error!("udp incoming pinecone data is not available or consumed");
 
         None
     }
 
     pub async fn is_udp_pinecone_connected(&self, nw_id: usize) -> bool {
-        const MAX_TICK: u8 = 5;
+        const MAX_TICK: u8 = 3;
         let udp_pinecone_tick: u8 =
             self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
+
+        if udp_pinecone_tick > MAX_TICK {
+            //udp connection is lost, trigger the port changed state to stop related tasks
+            self.tcp_src_port_nw_one.store(0, Ordering::Relaxed);
+        }
 
         udp_pinecone_tick < MAX_TICK
     }

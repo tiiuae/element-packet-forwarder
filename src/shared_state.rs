@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 const TOTAL_NUM_NW: usize = 2;
-
+const UDP_CONN_MAX_TICK: u8 = 3;
 #[derive(PartialEq, Clone, Debug, Copy)]
 pub enum NwId {
     One,
@@ -74,7 +74,10 @@ impl SharedState {
                     .for_each(|_| v.push(Arc::new(Mutex::new(vec![0; UDP_PINECONE_PAYLOAD_SIZE]))));
                 v
             },
-            udp_pinecone_network_conn_tick: Default::default(),
+            udp_pinecone_network_conn_tick: [
+                Arc::new(AtomicU8::new(UDP_CONN_MAX_TICK + 1)),
+                Arc::new(AtomicU8::new(UDP_CONN_MAX_TICK + 1)),
+            ],
             is_tcp_server_termination_signal_got_nw_one: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -268,22 +271,25 @@ impl SharedState {
     }
 
     pub async fn is_udp_pinecone_connected(&self, nw_id: usize) -> bool {
-        const MAX_TICK: u8 = 3;
         let udp_pinecone_tick: u8 =
             self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
 
-        if udp_pinecone_tick > MAX_TICK {
+        if udp_pinecone_tick > UDP_CONN_MAX_TICK {
             //udp connection is lost, trigger the port changed state to stop related tasks
             self.tcp_src_port_nw_one.store(0, Ordering::Relaxed);
         }
 
-        udp_pinecone_tick < MAX_TICK
+        udp_pinecone_tick < UDP_CONN_MAX_TICK
     }
 
     pub async fn udp_pinecone_feed_tick(&self, nw_id: usize) {
-        let udp_pinecone_tick: u8;
+        let mut udp_pinecone_tick: u8;
         {
             udp_pinecone_tick = self.udp_pinecone_network_conn_tick[nw_id].load(Ordering::Relaxed);
+        }
+
+        if udp_pinecone_tick > UDP_CONN_MAX_TICK {
+            udp_pinecone_tick = UDP_CONN_MAX_TICK;
         }
 
         self.udp_pinecone_network_conn_tick[nw_id].store(udp_pinecone_tick + 1, Ordering::Relaxed);

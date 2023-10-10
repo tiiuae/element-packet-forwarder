@@ -4,12 +4,14 @@ use crate::log_payload;
 use crate::shared_state::*;
 ///TODO: winapi functions should be added for windows support
 use nix::net::if_::*;
+use std::default;
 use std::error::Error;
 use std::ffi::CString;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::net::{Ipv6Addr, SocketAddrV6};
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use tokio::net::UdpSocket;
 use tokio::task::yield_now;
 use tokio::time::{sleep, Duration};
@@ -195,6 +197,9 @@ async fn udp_pinecone_send_nw_one(tx_socket: Arc<tokio::net::UdpSocket>, state: 
 /// Receive bytes from Udp Socket from nw two
 async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, state: SharedState) {
     let mut port_num = state.get_tcp_src_port_nw_one(NwId::Two).await;
+    let mut first_init = true;
+    let mut task_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {});
+
     loop {
         let mut buf = vec![0; 96];
 
@@ -213,12 +218,13 @@ async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, stat
                 state.insert_udp_incoming_pinecone_data(1, data).await;
 
                 let curr_port_num = state.get_tcp_src_port_nw_one(NwId::Two).await;
-                if port_num != curr_port_num {
+                if first_init || port_num != curr_port_num {
+                    first_init = false;
                     port_num = curr_port_num;
                     let state = state.clone();
-
-                    tokio::spawn(async move {
-                        fwd_tcp::start_tcp_pinecone_server(NwId::One, NwId::Two, state).await;
+                    task_handle.abort();
+                    task_handle = tokio::spawn(async move {
+                        fwd_tcp::tcp_pinecone_server_process(NwId::One, NwId::One, state).await;
                     });
                 }
             }

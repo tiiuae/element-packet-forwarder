@@ -79,7 +79,7 @@ fn create_pinecone_tcp_sock(nw_id: NwId, port_num: u16) -> tokio::net::TcpListen
     TcpListener::from_std(std_tcp_sock).expect("tcp pinecone from std err")
 }
 
-pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state: SharedState) {
+/*pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state: SharedState) {
     tracing::info!("Pinecone server is starting nw id : {}", recv_nw_id as u16,);
     let port_num = state.get_tcp_src_port_nw_one(recv_nw_id).await;
     let tcp_pinecone_sock = create_pinecone_tcp_sock(recv_nw_id, port_num);
@@ -91,15 +91,13 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
     tcp_pinecone_server_handle
         .await
         .expect("tcp pinecone server has started error");
-}
+}*/
 
-pub async fn tcp_pinecone_server_process(
-    recv_nw_id: NwId,
-    fwd_nw_id: NwId,
-    sock: TcpListener,
-    state: SharedState,
-) {
+pub async fn tcp_pinecone_server_process(recv_nw_id: NwId, fwd_nw_id: NwId, state: SharedState) {
+    tracing::info!("Pinecone server is starting nw id : {}", recv_nw_id as u16,);
     let tcp_port_num = state.get_tcp_src_port_nw_one(recv_nw_id).await;
+    let sock = create_pinecone_tcp_sock(recv_nw_id, tcp_port_num);
+
     tracing::info!(
         "Pinecone server process is starting recv nw id : {},forwarded nw id:{},port num:{}",
         recv_nw_id as u16,
@@ -109,10 +107,10 @@ pub async fn tcp_pinecone_server_process(
 
     loop {
         // if udp port has been changed, terminate the server
-        if tcp_port_num != state.get_tcp_src_port_nw_one(recv_nw_id).await {
-            break;
-        }
-
+        /*  if tcp_port_num != state.get_tcp_src_port_nw_one(recv_nw_id).await {
+             break;
+         }
+        */
         match sock.accept().await {
             Ok((socket, addr)) => {
                 let state_recv: SharedState = state.clone();
@@ -170,6 +168,7 @@ pub async fn tcp_pinecone_server_process(
             }
         }
     }
+    tracing::info!("Pinecone server is closed nw id : {}", recv_nw_id as u16,);
 }
 
 async fn sender_tcp_pinecone_process(

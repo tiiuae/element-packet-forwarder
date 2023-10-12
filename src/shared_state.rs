@@ -1,15 +1,30 @@
+use socket2::SockAddr;
 use std::collections::{HashMap, VecDeque};
-use std::net::IpAddr;
-use std::ops::DerefMut;
+use std::net::Ipv6Addr;
+use std::net::{IpAddr, SocketAddr};
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
 use std::sync::Arc;
+use tokio::io;
+use tokio::net::TcpStream;
 use tokio::sync::Mutex;
+use tokio::task::{self, JoinHandle};
 const TOTAL_NUM_NW: usize = 2;
 const UDP_CONN_MAX_TICK: u8 = 3;
 #[derive(PartialEq, Clone, Debug, Copy)]
 pub enum NwId {
     One,
     Two,
+}
+
+impl From<usize> for NwId {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => NwId::One,
+            1 => NwId::Two,
+            _ => panic!("Invalid usize value for MyEnum"),
+        }
+    }
 }
 
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
@@ -33,6 +48,19 @@ struct TcpData {
 /// value : tcp data
 type TcpFwdRouteMap = HashMap<PortIpPort, TcpData>;
 
+type TaskHandle = Option<task::JoinHandle<()>>;
+
+#[derive(Debug)]
+pub struct TcpFwdRouteTask {
+    pub server_wr: TaskHandle,
+    pub server_rd: TaskHandle,
+    pub fwd_process_handle: TaskHandle,
+    pub client_wr: TaskHandle,
+    pub client_rd: TaskHandle,
+}
+
+type TcpFwdRouteTaskMap = HashMap<PortIpPort, TcpFwdRouteTask>;
+
 #[derive(Debug, Clone)]
 pub struct SharedState {
     /// tcp incoming data and route info
@@ -41,19 +69,31 @@ pub struct SharedState {
     /// tcp outgoing data and route info
     tcp_con_out: [Arc<Mutex<TcpFwdRouteMap>>; TOTAL_NUM_NW],
 
+    /// tcp tasks and route info
+    tcp_route_task_map: [Arc<Mutex<TcpFwdRouteTaskMap>>; TOTAL_NUM_NW],
+
     /// tcp pinecone server port for network one
     tcp_src_port_nw_one: Arc<AtomicU16>,
+
+    /// tcp pinecone server ip for network two
+    tcp_dest_ip_nw_two: Arc<Mutex<IpAddr>>,
 
     ///tcp pinecone server terminate signal for network one
     is_tcp_server_termination_signal_got_nw_one: Arc<AtomicBool>,
     /// udp pinecone incoming packets handling
     udp_pinecone_in: Vec<Arc<Mutex<PineconeUdpDataT>>>,
 
+    /// tcp pinecone server task handle
+    tcp_pinecone_server_main_task_handle: Arc<Mutex<TaskHandle>>,
+
     /// udp pinecone outgoing packets handling
     udp_pinecone_out: Vec<Arc<Mutex<PineconeUdpDataT>>>,
 
     /// is udp pinecone  data exchange still available?
     udp_pinecone_network_conn_tick: [Arc<AtomicU8>; TOTAL_NUM_NW],
+
+    ///
+    terminated_task_handles: Arc<Mutex<Vec<task::AbortHandle>>>,
 }
 
 impl SharedState {
@@ -61,6 +101,7 @@ impl SharedState {
         Self {
             tcp_con_in: Default::default(),
             tcp_con_out: Default::default(),
+            tcp_route_task_map: Default::default(),
             tcp_src_port_nw_one: Arc::new(AtomicU16::new(0)),
             udp_pinecone_in: {
                 let mut v = Vec::with_capacity(TOTAL_NUM_NW);
@@ -79,6 +120,11 @@ impl SharedState {
                 Arc::new(AtomicU8::new(UDP_CONN_MAX_TICK + 1)),
             ],
             is_tcp_server_termination_signal_got_nw_one: Arc::new(AtomicBool::new(false)),
+            tcp_dest_ip_nw_two: Arc::new(Mutex::new(IpAddr::V6(Ipv6Addr::new(
+                0, 0, 0, 0, 0, 0, 0, 0,
+            )))),
+            terminated_task_handles: Arc::new(Mutex::new(Vec::new())),
+            tcp_pinecone_server_main_task_handle: Arc::new(Mutex::new(Default::default())),
         }
     }
 
@@ -180,9 +226,7 @@ impl SharedState {
     pub async fn get_tcp_incoming_data(
         &self,
         nw_id: NwId,
-        nw_one_ip: IpAddr,
-        nw_one_src_port: u16,
-        nw_two_src_port: u16,
+        route_info: PortIpPort,
     ) -> Option<Vec<u8>> {
         let index = nw_id as usize;
         let mut tcp_con = self.tcp_con_in[index].lock().await;
@@ -190,9 +234,9 @@ impl SharedState {
         self.get_tcp_fwd_route_data(
             index,
             tcp_con.deref_mut(),
-            nw_one_ip,
-            nw_one_src_port,
-            nw_two_src_port,
+            route_info.nw_one_ip,
+            route_info.nw_one_src_port,
+            route_info.nw_two_src_port,
         )
     }
 
@@ -318,6 +362,136 @@ impl SharedState {
     pub async fn send_tcp_server_pinecone_term_signal(&self) {
         self.is_tcp_server_termination_signal_got_nw_one
             .store(true, Ordering::Relaxed);
+    }
+
+    ///get tcp pinecone server ip
+    pub async fn get_tcp_pinecone_dest_sock_addr(&self, nw_id: NwId) -> SocketAddr {
+        assert!(nw_id == NwId::Two);
+        let tcp_pinecone_ip = self.tcp_dest_ip_nw_two.lock().await;
+        let tcp_pinecone_port = self.get_tcp_src_port_nw_one(nw_id).await;
+
+        SocketAddr::new(*tcp_pinecone_ip, tcp_pinecone_port)
+    }
+    ///get tcp pinecone server ip
+    pub async fn set_tcp_pinecone_dest_ip_addr(&self, nw_id: NwId, addr: IpAddr) {
+        assert!(nw_id == NwId::Two);
+        let mut tcp_pinecone_ip = self.tcp_dest_ip_nw_two.lock().await;
+        *tcp_pinecone_ip = addr;
+    }
+
+    pub async fn add_new_tcp_conn_route(
+        &self,
+        recv_nw_id: NwId,
+        route_info: PortIpPort,
+        server_wr: TaskHandle,
+        server_rd: TaskHandle,
+        fwd_process_handle: TaskHandle,
+        client_wr: TaskHandle,
+        client_rd: TaskHandle,
+    ) -> bool {
+        let index = recv_nw_id as usize;
+        let mut tcp_task_map = self.tcp_route_task_map[index].lock().await;
+
+        match tcp_task_map.get_mut(&route_info) {
+            None => {
+                let route_task_handles = TcpFwdRouteTask {
+                    server_wr,
+                    server_rd,
+                    fwd_process_handle,
+                    client_wr,
+                    client_rd,
+                };
+                tcp_task_map.insert(route_info, route_task_handles);
+            }
+            Some(_) => {
+                tracing::error!(
+                    "Route is already available and cannot be added,route info:{:?},nw id:{}",
+                    route_info,
+                    index
+                );
+                return false;
+            }
+        }
+        true
+    }
+
+    pub async fn send_term_signal_for_tcproute(
+        &self,
+        recv_nw_id: NwId,
+        route_info: PortIpPort,
+    ) -> bool {
+        let index = recv_nw_id as usize;
+        let mut tcp_task_map = self.tcp_route_task_map[index].lock().await;
+
+        match tcp_task_map.get_mut(&route_info) {
+            None => {
+                tracing::error!(
+                    "Route is not available and cannot be terminated,route info:{:?},nw id:{}",
+                    route_info,
+                    index
+                );
+                return false;
+            }
+            Some(task_handles) => {
+                let mut term_task_handles_vec = self.terminated_task_handles.lock().await;
+
+                if let Some(handle) = &task_handles.server_wr {
+                    term_task_handles_vec.push(handle.abort_handle());
+                }
+                if let Some(handle) = &task_handles.server_rd {
+                    term_task_handles_vec.push(handle.abort_handle());
+                }
+                if let Some(handle) = &task_handles.fwd_process_handle {
+                    term_task_handles_vec.push(handle.abort_handle());
+                }
+                if let Some(handle) = &task_handles.client_rd {
+                    term_task_handles_vec.push(handle.abort_handle());
+                }
+                if let Some(handle) = &task_handles.client_wr {
+                    term_task_handles_vec.push(handle.abort_handle());
+                }
+
+                tcp_task_map.remove(&route_info);
+            }
+        }
+
+        true
+    }
+
+    pub async fn check_term_signal_tasks(&self) {
+        let mut task_handles = self.terminated_task_handles.lock().await;
+
+        if !task_handles.is_empty() {
+            for task_handle in task_handles.iter() {
+                task_handle.abort();
+            }
+
+            task_handles.clear();
+        }
+    }
+
+    pub async fn send_term_signal_all_task_handles(&self) {
+        for i in 0..TOTAL_NUM_NW {
+            let tcp_task_map = self.tcp_route_task_map[i].lock().await;
+
+            for (route, _) in tcp_task_map.iter() {
+                self.send_term_signal_for_tcproute(i.into(), *route).await;
+            }
+        }
+
+        let mut term_task_handles_vec = self.terminated_task_handles.lock().await;
+        let tcp_pinecone_server_main_task_handle =
+            self.tcp_pinecone_server_main_task_handle.lock().await;
+
+        if let Some(handle) = tcp_pinecone_server_main_task_handle.deref() {
+            term_task_handles_vec.push(handle.abort_handle());
+        }
+    }
+
+    pub async fn update_tcp_pinecone_server_main_task_handle(&self, handle: TaskHandle) {
+        let mut tcp_pinecone_server_main_task_handle =
+            self.tcp_pinecone_server_main_task_handle.lock().await;
+        *tcp_pinecone_server_main_task_handle = handle;
     }
 }
 
@@ -518,12 +692,7 @@ mod tests {
         let new_data = vec![2, 5, 8, 9, 0, 2, 4];
 
         let got_data: Option<Vec<u8>> = state
-            .get_tcp_incoming_data(
-                NWID,
-                tcp_route_info.clone().nw_one_ip,
-                tcp_route_info.clone().nw_one_src_port,
-                tcp_route_info.clone().nw_two_src_port,
-            )
+            .get_tcp_incoming_data(NWID, tcp_route_info.clone())
             .await;
         assert_eq!(None, got_data);
 
@@ -531,14 +700,7 @@ mod tests {
             .insert_tcp_incoming_data(NWID, tcp_route_info, new_data.clone())
             .await;
 
-        let got_data: Option<Vec<u8>> = state
-            .get_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-            )
-            .await;
+        let got_data: Option<Vec<u8>> = state.get_tcp_incoming_data(NWID, tcp_route_info).await;
 
         assert_eq!(new_data, got_data.unwrap());
     }
@@ -570,41 +732,13 @@ mod tests {
             .insert_tcp_incoming_data(NWID, tcp_route_info, new_data_3.clone())
             .await;
 
-        let got_data: Option<Vec<u8>> = state
-            .get_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-            )
-            .await;
+        let got_data: Option<Vec<u8>> = state.get_tcp_incoming_data(NWID, tcp_route_info).await;
         assert_eq!(new_data, got_data.unwrap());
-        let got_data: Option<Vec<u8>> = state
-            .get_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-            )
-            .await;
+        let got_data: Option<Vec<u8>> = state.get_tcp_incoming_data(NWID, tcp_route_info).await;
         assert_eq!(new_data_2, got_data.unwrap());
-        let got_data: Option<Vec<u8>> = state
-            .get_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-            )
-            .await;
+        let got_data: Option<Vec<u8>> = state.get_tcp_incoming_data(NWID, tcp_route_info).await;
         assert_eq!(new_data_3, got_data.unwrap());
-        let got_data: Option<Vec<u8>> = state
-            .get_tcp_incoming_data(
-                NWID,
-                tcp_route_info.nw_one_ip,
-                tcp_route_info.nw_one_src_port,
-                tcp_route_info.nw_two_src_port,
-            )
-            .await;
+        let got_data: Option<Vec<u8>> = state.get_tcp_incoming_data(NWID, tcp_route_info).await;
         assert_eq!(None, got_data);
     }
 

@@ -19,7 +19,7 @@
 //! ```no_run
 //! use element_packet_forwarder::fwd_udp;
 //! use element_packet_forwarder::shared_state::*;
-//! use element_packet_forwarder::start_proxy;
+//! use element_packet_forwarder::start_task_management;
 //! use element_packet_forwarder::start_tracing_engine;
 //! use futures::join;
 //! use std::error::Error;
@@ -30,7 +30,7 @@
 //!
 //!    let (_pinecone_res, _proxy_res, _tracing_res) = join!(
 //!         fwd_udp::start_pinecone_udp_mcast(shared_state.clone()),
-//!         start_proxy(shared_state.clone()),
+//!         start_task_management(shared_state.clone()),
 //!         start_tracing_engine()
 //!     );
 //!   Ok(())
@@ -60,22 +60,29 @@ pub mod shared_state;
 use crate::shared_state::*;
 use tokio::time::{sleep, Duration};
 
-pub async fn start_proxy(state: SharedState) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_task_management(state: SharedState) -> Result<(), Box<dyn std::error::Error>> {
     //proxy task to check and forward data packets
-    let proxy_task_handle = tokio::spawn(async move {
-        proxy_process(state).await;
+    let task_mngmt_handle = tokio::spawn(async move {
+        task_management_process(state).await;
     });
 
-    proxy_task_handle.await.expect("proxy task function error");
+    task_mngmt_handle
+        .await
+        .expect("Task management task function error");
     Ok(())
 }
 
-async fn proxy_process(state: SharedState) {
-    tracing::error!("Proxy process has started");
+async fn task_management_process(state: SharedState) {
+    tracing::error!("Task management process has started");
 
     loop {
         let is_connected = state.is_udp_pinecone_connected(1).await;
-        tracing::debug!("Hey, I am proxy process:{}", is_connected);
+        tracing::debug!(
+            "Hey, I am task management process,is udp connected:{}",
+            is_connected
+        );
+        state.check_term_signal_tasks().await;
+
         sleep(Duration::from_millis(1000)).await;
     }
 }

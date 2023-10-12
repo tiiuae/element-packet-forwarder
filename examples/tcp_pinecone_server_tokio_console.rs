@@ -2,7 +2,7 @@
 use element_packet_forwarder::fwd_tcp;
 use element_packet_forwarder::shared_state;
 use element_packet_forwarder::shared_state::*;
-use element_packet_forwarder::start_proxy;
+use element_packet_forwarder::start_task_management;
 use element_packet_forwarder::start_tracing_engine;
 use futures::join;
 use std::env;
@@ -38,8 +38,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 #[tracing::instrument]
 async fn start_tcp_pinecone_server_tracing(shared_state: SharedState) {
-    let _pinecone_res = join!(
-        //start_tracing_engine(),
+    let _ = join!(
+        start_task_management(shared_state.clone()),
         fwd_tcp::start_tcp_pinecone_server(NwId::One, NwId::One, shared_state)
     );
 }

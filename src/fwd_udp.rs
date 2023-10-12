@@ -92,7 +92,7 @@ async fn get_udpsock_with_mcastv6_opts(
 /// ```no_run
 /// use element_packet_forwarder::fwd_udp;
 /// use element_packet_forwarder::shared_state::*;
-/// use element_packet_forwarder::start_proxy;
+/// use element_packet_forwarder::start_task_management;
 /// use element_packet_forwarder::start_tracing_engine;
 /// use futures::join;
 /// use std::error::Error;
@@ -198,7 +198,6 @@ async fn udp_pinecone_send_nw_one(tx_socket: Arc<tokio::net::UdpSocket>, state: 
 async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, state: SharedState) {
     let mut port_num = state.get_tcp_src_port_nw_one(NwId::Two).await;
     let mut first_init = true;
-    let mut task_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {});
 
     loop {
         let mut buf = vec![0; 96];
@@ -216,17 +215,31 @@ async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, stat
                 )
                 .await;
                 state.insert_udp_incoming_pinecone_data(1, data).await;
-
+                state
+                    .set_tcp_pinecone_dest_ip_addr(NwId::Two, peer.ip())
+                    .await;
+                //check whether udp port is changed
                 let curr_port_num = state.get_tcp_src_port_nw_one(NwId::Two).await;
+
                 if first_init || port_num != curr_port_num {
                     first_init = false;
                     port_num = curr_port_num;
-                    let state = state.clone();
-                    task_handle.abort();
-                    task_handle = tokio::spawn(async move {
-                        fwd_tcp::tcp_pinecone_server_process(NwId::One, NwId::One, state).await;
+                    let state_tcp_pinecone_task = state.clone();
+                    let task_handle = tokio::spawn(async move {
+                        fwd_tcp::start_tcp_pinecone_server(
+                            NwId::One,
+                            NwId::Two,
+                            state_tcp_pinecone_task,
+                        )
+                        .await;
                     });
+                    let state_handle = state.clone();
+                    state_handle.send_term_signal_all_task_handles().await;
+                    state_handle
+                        .update_tcp_pinecone_server_main_task_handle(Some(task_handle))
+                        .await;
                 }
+                //-----------------------------------
             }
             Err(e) => {
                 tracing::error!("Error receiving data: {:?}", e);

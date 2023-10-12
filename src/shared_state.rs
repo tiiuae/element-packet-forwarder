@@ -1,3 +1,4 @@
+use crate::cli::get_if2_name;
 use socket2::SockAddr;
 use std::collections::{HashMap, VecDeque};
 use std::net::Ipv6Addr;
@@ -13,8 +14,8 @@ const TOTAL_NUM_NW: usize = 2;
 const UDP_CONN_MAX_TICK: u8 = 3;
 #[derive(PartialEq, Clone, Debug, Copy)]
 pub enum NwId {
-    One,
-    Two,
+    One = 0,
+    Two = 1,
 }
 
 impl From<usize> for NwId {
@@ -22,7 +23,7 @@ impl From<usize> for NwId {
         match value {
             0 => NwId::One,
             1 => NwId::Two,
-            _ => panic!("Invalid usize value for MyEnum"),
+            _ => panic!("Invalid usize value for NwId"),
         }
     }
 }
@@ -365,12 +366,13 @@ impl SharedState {
     }
 
     ///get tcp pinecone server ip
-    pub async fn get_tcp_pinecone_dest_sock_addr(&self, nw_id: NwId) -> SocketAddr {
+    pub async fn get_tcp_pinecone_dest_sock_addr(&self, nw_id: NwId) -> String {
         assert!(nw_id == NwId::Two);
         let tcp_pinecone_ip = self.tcp_dest_ip_nw_two.lock().await;
+        let if_name = get_if2_name().unwrap();
         let tcp_pinecone_port = self.get_tcp_src_port_nw_one(nw_id).await;
 
-        SocketAddr::new(*tcp_pinecone_ip, tcp_pinecone_port)
+        tcp_pinecone_ip.to_string() + "%" + if_name + ":" + tcp_pinecone_port.to_string().as_str()
     }
     ///get tcp pinecone server ip
     pub async fn set_tcp_pinecone_dest_ip_addr(&self, nw_id: NwId, addr: IpAddr) {
@@ -486,6 +488,7 @@ impl SharedState {
         if let Some(handle) = tcp_pinecone_server_main_task_handle.deref() {
             term_task_handles_vec.push(handle.abort_handle());
         }
+        tracing::info!("All task are terminated");
     }
 
     pub async fn update_tcp_pinecone_server_main_task_handle(&self, handle: TaskHandle) {

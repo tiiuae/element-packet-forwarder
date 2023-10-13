@@ -5,7 +5,8 @@ use element_packet_forwarder::start_task_management;
 use element_packet_forwarder::start_tracing_engine;
 use futures::join;
 use std::error::Error;
-#[tokio::main]
+//#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<(), Box<dyn Error>> {
     let shared_state = SharedState::new().await;
 

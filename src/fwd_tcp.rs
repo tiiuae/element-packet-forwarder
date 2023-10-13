@@ -12,6 +12,7 @@ use std::thread::JoinHandle;
 use tokio::io::{self, ReadHalf, WriteHalf};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
+use tokio::sync::mpsc;
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task;
@@ -81,20 +82,6 @@ fn create_pinecone_tcp_sock(nw_id: NwId, port_num: u16) -> tokio::net::TcpListen
     TcpListener::from_std(std_tcp_sock).expect("tcp pinecone from std err")
 }
 
-/*pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state: SharedState) {
-    tracing::info!("Pinecone server is starting nw id : {}", recv_nw_id as u16,);
-    let port_num = state.get_tcp_src_port_nw_one(recv_nw_id).await;
-    let tcp_pinecone_sock = create_pinecone_tcp_sock(recv_nw_id, port_num);
-
-    let tcp_pinecone_server_handle = tokio::spawn(async move {
-        tcp_pinecone_server_process(recv_nw_id, fwd_nw_id, tcp_pinecone_sock, state.clone()).await;
-    });
-
-    tcp_pinecone_server_handle
-        .await
-        .expect("tcp pinecone server has started error");
-}*/
-
 pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state: SharedState) {
     tracing::info!("Pinecone server is starting nw id : {}", recv_nw_id as u16,);
     let tcp_port_num = state.get_tcp_src_port_nw_one(recv_nw_id).await;
@@ -108,11 +95,6 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
     );
 
     loop {
-        // if udp port has been changed, terminate the server
-        /*  if tcp_port_num != state.get_tcp_src_port_nw_one(recv_nw_id).await {
-             break;
-         }
-        */
         match sock.accept().await {
             Ok((socket, addr)) => {
                 let state_client_fwd = state.clone();
@@ -122,6 +104,10 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
                     ///TODO: if port is already used, new port should be assigned
                     nw_two_src_port: addr.port(),
                 };
+                let (server_in_tx, server_in_rx) = mpsc::channel(20);
+                let (forwarding_tx, forwarding_rx) = mpsc::channel(20);
+                let (client_in_tx, client_in_rx) = mpsc::channel(20);
+
                 let wr_client_handle: task::JoinHandle<()>;
                 let rd_client_handle: task::JoinHandle<()>;
 
@@ -131,23 +117,18 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
                     recv_nw_id,
                     route_conn,
                     state_client_fwd,
+                    forwarding_rx,
+                    client_in_tx,
                 )
                 .await
                 {
                     wr_client_handle = wr_handle;
                     rd_client_handle = rd_handle;
                 } else {
+                    drop(server_in_tx);
+                    drop(forwarding_tx);
                     continue;
                 }
-
-                let state_recv: SharedState = state.clone();
-                let state_send: SharedState = state.clone();
-                let state_fwd_process: SharedState = state.clone();
-                let (fwd_process_waker_tx, fwd_process_waker_rx) = watch::channel(false);
-
-                let cancel_token_recv: CancellationToken = CancellationToken::new();
-                let cancel_token_send = cancel_token_recv.clone();
-                let cancel_token_fwd = cancel_token_recv.clone();
 
                 tracing::info!(
                     "tcp pinecone connection has been established,nw id:{},route map:{:?}",
@@ -159,16 +140,11 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
 
                 // Asynchronously send tcp data.
                 let server_wr = tokio::spawn(async move {
-                    sender_tcp_pinecone_process(
-                        fwd_nw_id,
-                        sender_socket,
-                        state_send,
-                        route_conn,
-                        cancel_token_send,
-                    )
-                    .await;
+                    sender_tcp_pinecone_process(fwd_nw_id, sender_socket, route_conn, client_in_rx)
+                        .await;
                 });
 
+                let state_recv = state.clone();
                 // Asynchronously wait for an inbound socket.
                 let server_rd = tokio::spawn(async move {
                     receive_tcp_pinecone_process(
@@ -177,10 +153,11 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
                         recv_socket,
                         state_recv,
                         route_conn,
-                        fwd_process_waker_tx,
+                        server_in_tx,
                     )
                     .await;
                 });
+                let state_fwd_process = state.clone();
 
                 let forwarding_process_handle = tokio::spawn(async move {
                     forwarding_process(
@@ -188,8 +165,8 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
                         fwd_nw_id,
                         route_conn,
                         state_fwd_process,
-                        fwd_process_waker_rx,
-                        cancel_token_fwd,
+                        server_in_rx,
+                        forwarding_tx,
                     )
                     .await;
                 });
@@ -222,16 +199,13 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
 async fn sender_tcp_pinecone_process(
     nw_id: NwId,
     mut sender_socket: WriteHalf<TcpStream>,
-    state: SharedState,
     route_info: PortIpPort,
-    cancel_token: CancellationToken,
+    mut rx_chan: mpsc::Receiver<Vec<u8>>,
 ) {
     loop {
-        if let Some(data) = state.get_tcp_incoming_data(nw_id, route_info).await {
+        if let Some(data) = rx_chan.recv().await {
             let _ = sender_socket.write_all(&data).await;
         }
-        sleep(Duration::from_millis(100)).await;
-        //yield_now().await;
     }
 }
 
@@ -241,24 +215,12 @@ async fn receive_tcp_pinecone_process(
     mut recv_socket: ReadHalf<TcpStream>,
     state: SharedState,
     route_info: PortIpPort,
-    tx_fwd_process_waker: watch::Sender<bool>,
+    tx_chan: mpsc::Sender<Vec<u8>>,
 ) {
-    let port_num = state.get_tcp_src_port_nw_one(NwId::One).await;
+    //let port_num = state.get_tcp_src_port_nw_one(NwId::One).await;
 
     loop {
         let mut buf: Vec<u8> = vec![0; 2048];
-
-        //TODO:bu kontrol udp den yapılmalı bu satırlar kalkmalı
-        if port_num != state.get_tcp_src_port_nw_one(NwId::One).await {
-            tracing::info!(
-                "tcp pinecone port has been changed,nw_id:{},route map:{:?}",
-                recv_nw_id as u16,
-                route_info
-            );
-            state
-                .send_term_signal_for_tcproute(recv_nw_id, route_info)
-                .await;
-        }
 
         match recv_socket.read(&mut buf).await {
             Ok(0) => {
@@ -280,10 +242,11 @@ async fn receive_tcp_pinecone_process(
                     buf.len(),
                     &buf[0..n]
                 );
-                state
-                    .insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec())
-                    .await;
-                let _ = tx_fwd_process_waker.send(true);
+                /*state
+                .insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec())
+                .await;*/
+                //let _ = tx_fwd_process_waker.send(true);
+                tx_chan.send(buf[0..n].to_vec()).await;
             }
             Err(e) => {
                 tracing::error!("Error reading from socket: {}", e);
@@ -305,20 +268,13 @@ async fn forwarding_process(
     fwd_nw_id: NwId,
     route_info: PortIpPort,
     shared_state: SharedState,
-    mut rx: watch::Receiver<bool>,
-    cancel_token: CancellationToken,
+    mut rx_chan: mpsc::Receiver<Vec<u8>>,
+    tx_chan: mpsc::Sender<Vec<u8>>,
 ) {
     loop {
-        if rx.changed().await.is_ok() {
-            if let Some(data) = shared_state
-                .get_tcp_incoming_data(recv_nw_id, route_info)
-                .await
-            {
-                if validate_data(&data, route_info) {
-                    shared_state
-                        .insert_tcp_outgoing_data(fwd_nw_id, route_info, data)
-                        .await;
-                }
+        if let Some(data) = rx_chan.recv().await {
+            if validate_data(&data, route_info) {
+                tx_chan.send(data).await;
             }
         }
 
@@ -344,6 +300,8 @@ async fn start_tcp_pinecone_fwd_client(
     fwd_nw_id: NwId,
     route_info: PortIpPort,
     shared_state: SharedState,
+    rx_chn: mpsc::Receiver<Vec<u8>>,
+    tx_chn: mpsc::Sender<Vec<u8>>,
 ) -> Option<(task::JoinHandle<()>, task::JoinHandle<()>)> {
     let addr = shared_state
         .get_tcp_pinecone_dest_sock_addr(NwId::Two)
@@ -357,7 +315,7 @@ async fn start_tcp_pinecone_fwd_client(
         let rd_state = shared_state.clone();
         let rd_handle = tokio::spawn(async move {
             receive_tcp_pinecone_client_process(
-                recv_nw_id, fwd_nw_id, rd_sock, route_info, rd_state,
+                recv_nw_id, fwd_nw_id, rd_sock, route_info, rd_state, tx_chn,
             )
             .await;
         });
@@ -369,6 +327,7 @@ async fn start_tcp_pinecone_fwd_client(
                 wr_sock,
                 route_info,
                 shared_state,
+                rx_chn,
             )
             .await;
         });
@@ -386,6 +345,7 @@ async fn receive_tcp_pinecone_client_process(
     mut socket: ReadHalf<TcpStream>,
     route_info: PortIpPort,
     shared_state: SharedState,
+    tx_chan: mpsc::Sender<Vec<u8>>,
 ) {
     tracing::debug!(
         "tcp pinecone client  receiver is started,route info:{:?},recv nw id:{},fwd nw id:{}",
@@ -417,9 +377,10 @@ async fn receive_tcp_pinecone_client_process(
                     buf.len(),
                     &buf[0..n]
                 );
-                shared_state
-                    .insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec())
-                    .await;
+                /*shared_state
+                .insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec())
+                .await;*/
+                tx_chan.send(buf[0..n].to_vec()).await;
             }
             Err(e) => {
                 tracing::error!("Error reading from socket: {}", e);
@@ -437,6 +398,7 @@ async fn sender_tcp_pinecone_client_process(
     mut socket: WriteHalf<TcpStream>,
     route_info: PortIpPort,
     shared_state: SharedState,
+    mut rx_chan: mpsc::Receiver<Vec<u8>>,
 ) {
     tracing::debug!(
         "tcp pinecone client sender is started,route info:{:?},recv nw id:{},fwd nw id:{}",
@@ -445,13 +407,8 @@ async fn sender_tcp_pinecone_client_process(
         fwd_nw_id as u16
     );
     loop {
-        if let Some(data) = shared_state
-            .get_tcp_outgoing_data(recv_nw_id, route_info)
-            .await
-        {
+        if let Some(data) = rx_chan.recv().await {
             let _ = socket.write_all(&data).await;
         }
-        sleep(Duration::from_millis(100)).await;
-        //yield_now().await;
     }
 }

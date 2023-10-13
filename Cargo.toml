@@ -32,7 +32,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "^1.0", features = ["full"] }
+tokio = { version = "^1.0", features = ["full","tracing"] }
 socket2 = "0.5"
 clap = {version = "^4.4",features = ["derive"]}
 lazy_static = "1.4"
@@ -42,10 +42,13 @@ nix = {version = "^0.27",features = ["net"]}
 tracing = "0.1.37"
 tracing-subscriber = "0.3.17"
 futures = "0.3.28"
+tokio-util="0.7.9"
 [dev-dependencies]
 tracing-test = "0.2.4"
 static_assertions = "1.1.0"
 rand = "0.8"
+console-subscriber = "0.2.0"
+
 # version_sync: to ensure versions in `Cargo.toml` and `README.md` are in sync
 version-sync = "0.9.4"
 # cargo-bump: to bump package version and tag a commit at the same time.
@@ -57,6 +60,21 @@ version-sync = "0.9.4"
 ### FEATURES #################################################################
 
 [features]
+
+### TESTS
+[[example]]
+name = "tcp-pinecone-server-tokio-console"
+path = "examples/tcp_pinecone_server_tokio_console.rs"
+
+[[example]]
+name = "tcp-pinecone-server"
+path = "examples/tcp_pinecone_server.rs"
+
+
+[[example]]
+name = "element-packet-forwarder-tokio-console"
+path = "examples/element_packet_forwarder_tokio_console.rs"
+
 
 
 [package.metadata.scripts]

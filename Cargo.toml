@@ -15,7 +15,7 @@ keywords = ["element-packet-forwarder",
 categories = [
     # "api-bindings"
 ]
-license = "MIT"
+license = "Apache-2.0"
 edition = "2021"
 exclude = [
     # (optional) list any files we don't want to publish to crates.io

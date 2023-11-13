@@ -1,3 +1,7 @@
+/*
+    Copyright 2022-2023 TII (SSRC) and the contributors
+    SPDX-License-Identifier: Apache-2.0
+*/
 use crate::cli;
 use crate::fwd_tcp;
 use crate::log_payload;
@@ -247,3 +251,40 @@ async fn udp_pinecone_receive_nw_two(rx_socket: Arc<tokio::net::UdpSocket>, stat
         }
     }
 }
+
+/*pub async fn start_ipv4_udp(){
+
+
+// Create a SocketAddr that binds to every available network interface and a dynamic port.
+let listen_addr: SocketAddr = "0.0.0.0:0".parse().expect("ipv4 parse err");
+
+// Create a UDP socket bound to the specified address.
+let socket = UdpSocket::bind(&listen_addr).await.expect("ipv4 bind err");
+
+// Get the actual address the socket is bound to (including the dynamic port).
+let bound_addr = socket.local_addr().expect("bound addr err");
+
+println!("UDP server is listening on: {}", bound_addr);
+
+
+loop {
+    let mut buf: [u8; 1024] = [0u8; 1024];
+
+    // Receive data from a UDP client.
+    if let Ok((len,peer))=socket.recv_from(&mut buf).await{
+        // Print the received data and the client's address.
+        let data = &buf[0..len];
+        let data_str = std::str::from_utf8(data).expect("utf8 err");
+
+        println!("Received data from {}: {}", peer, data_str);
+    }
+
+
+}
+
+
+
+}
+
+
+*/

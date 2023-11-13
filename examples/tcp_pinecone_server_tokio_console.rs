@@ -1,3 +1,7 @@
+/*
+    Copyright 2022-2023 TII (SSRC) and the contributors
+    SPDX-License-Identifier: Apache-2.0
+*/
 ///RUSTFLAGS="--cfg tokio_unstable" cargo build --example tcp-pinecone-server-tokio-console
 use element_packet_forwarder::fwd_tcp;
 use element_packet_forwarder::shared_state;

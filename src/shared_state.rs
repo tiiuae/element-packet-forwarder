@@ -1,3 +1,7 @@
+/*
+    Copyright 2022-2023 TII (SSRC) and the contributors
+    SPDX-License-Identifier: Apache-2.0
+*/
 use crate::cli::get_if2_name;
 use socket2::SockAddr;
 use std::collections::{HashMap, VecDeque};

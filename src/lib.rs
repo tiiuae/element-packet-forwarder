@@ -2,7 +2,7 @@
 #![warn(rust_2018_idioms, missing_docs)]
 //#![deny(warnings, dead_code, unused_imports, unused_mut)]
 
-//! [![github]](https://github.com/enesoztrk/element-packet-forwarder)&ensp;[![crates-io]](https://crates.io/crates/element-packet-forwarder)&ensp;[![docs-rs]](https://docs.rs/element-packet-forwarder)
+//! [![github]]()&ensp;[![crates-io]](https://crates.io/crates/element-packet-forwarder)&ensp;[![docs-rs]](https://docs.rs/element-packet-forwarder)
 //!
 //! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
 //! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
@@ -45,7 +45,7 @@
 //! [crates.io] page, or alternatively in the [`README.md`] file on the GitHub project repo.
 //!
 //! [crates.io]: https://crates.io/crates/element-packet-forwarder
-//! [`README.md`]: https://github.com/enesoztrk/element-packet-forwarder
+//! [`README.md`]:
 //!
 
 /// command line parsing and handling module

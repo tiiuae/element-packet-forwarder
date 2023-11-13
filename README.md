@@ -1,8 +1,20 @@
+<!--
+    Copyright 2022-2023 TII (SSRC) and the contributors
+-->
+
 # element-packet-forwarder
 
 [<img alt="github" src="https://img.shields.io/badge/github-enesoztrk/element--packet--forwarder-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="22">](https://github.com/enesoztrk/element-packet-forwarder)
 
-Element Packet Forwarder project
+<div align="left">
+
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-darkgreen.svg)](./LICENSES/LICENSE.Apache-2.0) 
+
+</div>
+
+
+This repository contains the source files (code and documentation) of element packet forwarder application — an open-source project to forward [element chat app](https://element.io/) packets from the external network to the internal network. The project is going to be deployed on [ghaf](https://github.com/tiiuae/ghaf) platform.
+
 ## Getting started
 
 
@@ -28,15 +40,18 @@ to discuss a new feature or change.
 Check out the [Contributing][] section in the docs for more info.
 
 [Contributing]: CONTRIBUTING.md
-[open an issue]: https://github.com/enesoztrk/element-packet-forwarder/issues
+[open an issue]: 
 
 ## License
 
-This project is proudly licensed under the MIT license ([LICENSE](LICENSE)
-or http://opensource.org/licenses/MIT).
+The Ghaf team uses several licenses to distribute software and documentation:
 
-`element-packet-forwarder` can be distributed according to the MIT license. Contributions
-will be accepted under the same license.
+| License Full Name | SPDX Short Identifier | Description |
+| -------- | ----------- | ----------- |
+| Apache License 2.0 | [Apache-2.0](https://spdx.org/licenses/Apache-2.0.html) |  source code. |
+
+
+See [LICENSE.Apache-2.0](./LICENSES/LICENSE.Apache-2.0)  for the full license text.
 
 ## Authors
 

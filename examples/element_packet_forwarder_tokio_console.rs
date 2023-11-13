@@ -1,3 +1,7 @@
+/*
+    Copyright 2022-2023 TII (SSRC) and the contributors
+    SPDX-License-Identifier: Apache-2.0
+*/
 use element_packet_forwarder::fwd_tcp;
 use element_packet_forwarder::fwd_udp;
 use element_packet_forwarder::shared_state::*;

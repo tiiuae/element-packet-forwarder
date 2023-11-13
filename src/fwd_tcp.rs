@@ -1,4 +1,9 @@
+/*
+    Copyright 2022-2023 TII (SSRC) and the contributors
+    SPDX-License-Identifier: Apache-2.0
+*/
 use crate::cli;
+use crate::log_payload;
 use crate::shared_state::PortIpPort;
 use crate::shared_state::SharedState;
 use crate::NwId;
@@ -20,7 +25,7 @@ use tokio::task::yield_now;
 use tokio::time::{sleep, Duration};
 use tokio_util::sync::CancellationToken;
 const MAX_CLIENT_NUM: i32 = 128;
-
+const TCP_PAYLOAD_SIZE: usize = 65535;
 fn tcp_sock_ipv6_init(
     interface_name: &str,
     port_num: u16,
@@ -63,7 +68,7 @@ fn tcp_sock_ipv6_init(
         .expect("tcp ipv6 set nonblocking err");
 
     // Configure TCP-specific options if needed
-    // socket.set_tcp_nodelay(true)?;
+    socket.set_nodelay(true).expect("tcp socket nodelay error");
 
     // Listen for incoming connections
     socket
@@ -104,9 +109,9 @@ pub async fn start_tcp_pinecone_server(recv_nw_id: NwId, fwd_nw_id: NwId, state:
                     ///TODO: if port is already used, new port should be assigned
                     nw_two_src_port: addr.port(),
                 };
-                let (server_in_tx, server_in_rx) = mpsc::channel(20);
-                let (forwarding_tx, forwarding_rx) = mpsc::channel(20);
-                let (client_in_tx, client_in_rx) = mpsc::channel(20);
+                let (server_in_tx, server_in_rx) = mpsc::channel(100);
+                let (forwarding_tx, forwarding_rx) = mpsc::channel(100);
+                let (client_in_tx, client_in_rx) = mpsc::channel(100);
 
                 let wr_client_handle: task::JoinHandle<()>;
                 let rd_client_handle: task::JoinHandle<()>;
@@ -204,7 +209,17 @@ async fn sender_tcp_pinecone_process(
 ) {
     loop {
         if let Some(data) = rx_chan.recv().await {
-            let _ = sender_socket.write_all(&data).await;
+            if let Err(err) = sender_socket.write_all(&data).await {
+                tracing::error!("tcp pinecone server writeall: {:?}", err);
+            }
+
+            tracing::debug!(
+                "tcp pinecone server outgoing data,nw_id:{},route_info:{:?},size:{},payload:\n",
+                nw_id as u16,
+                route_info,
+                data.len()
+            );
+            log_payload("\n", &data).await;
         }
     }
 }
@@ -218,10 +233,10 @@ async fn receive_tcp_pinecone_process(
     tx_chan: mpsc::Sender<Vec<u8>>,
 ) {
     //let port_num = state.get_tcp_src_port_nw_one(NwId::One).await;
+    let mut buf: Vec<u8> = vec![0; TCP_PAYLOAD_SIZE];
 
     loop {
-        let mut buf: Vec<u8> = vec![0; 2048];
-
+        buf.resize_with(TCP_PAYLOAD_SIZE, Default::default);
         match recv_socket.read(&mut buf).await {
             Ok(0) => {
                 tracing::info!(
@@ -236,17 +251,23 @@ async fn receive_tcp_pinecone_process(
             }
             Ok(n) => {
                 tracing::debug!(
-                    "tcp pinecone incoming data,nw_id:{},route_info:{:?},data:{}\n{:?}",
+                    "tcp pinecone server incoming data,nw_id:{},route_info:{:?},size:{},payload:\n",
                     recv_nw_id as u16,
                     route_info,
-                    buf.len(),
-                    &buf[0..n]
+                    n
                 );
+                log_payload("\n", &buf[0..n].to_vec()).await;
+
                 /*state
                 .insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec())
                 .await;*/
                 //let _ = tx_fwd_process_waker.send(true);
-                tx_chan.send(buf[0..n].to_vec()).await;
+                if let Err(err) = tx_chan.send(buf[0..n].to_vec()).await {
+                    tracing::error!(
+                        "tcp pinecone server sending data to other task eror:{:?}",
+                        err
+                    );
+                }
             }
             Err(e) => {
                 tracing::error!("Error reading from socket: {}", e);
@@ -273,17 +294,23 @@ async fn forwarding_process(
 ) {
     loop {
         if let Some(data) = rx_chan.recv().await {
+            let len = data.len();
             if validate_data(&data, route_info) {
-                tx_chan.send(data).await;
+                if let Err(err) = tx_chan.send(data).await {
+                    tracing::error!(
+                        "tcp pinecone forwarding, sending data to other task eror:{:?}",
+                        err
+                    );
+                }
             }
+            tracing::info!(
+                "Packet forwarding process,recv nw id:{},forwarded nw id:{},route map:{:?},size:{}",
+                recv_nw_id as u16,
+                fwd_nw_id as u16,
+                route_info,
+                len
+            );
         }
-
-        tracing::info!(
-            "Packet forwarding process,recv nw id:{},forwarded nw id:{},route map:{:?}",
-            recv_nw_id as u16,
-            fwd_nw_id as u16,
-            route_info
-        );
     }
 
     shared_state
@@ -353,10 +380,10 @@ async fn receive_tcp_pinecone_client_process(
         recv_nw_id as u16,
         fwd_nw_id as u16
     );
+    let mut buf: Vec<u8> = vec![0; TCP_PAYLOAD_SIZE];
 
     loop {
-        let mut buf: Vec<u8> = vec![0; 2048];
-
+        buf.resize_with(TCP_PAYLOAD_SIZE, Default::default);
         match socket.read(&mut buf).await {
             Ok(0) => {
                 tracing::info!(
@@ -371,16 +398,22 @@ async fn receive_tcp_pinecone_client_process(
             }
             Ok(n) => {
                 tracing::debug!(
-                    "tcp pinecone client incoming data,nw_id:{},route_info:{:?},data:{}\n{:?}",
+                    "tcp pinecone client incoming data,nw_id:{},route_info:{:?},size:{},payload:\n",
                     recv_nw_id as u16,
                     route_info,
-                    buf.len(),
-                    &buf[0..n]
+                    n
                 );
+                log_payload("\n", &buf[0..n].to_vec()).await;
+
                 /*shared_state
                 .insert_tcp_incoming_data(recv_nw_id, route_info, buf[0..n].to_vec())
                 .await;*/
-                tx_chan.send(buf[0..n].to_vec()).await;
+                if let Err(err) = tx_chan.send(buf[0..n].to_vec()).await {
+                    tracing::error!(
+                        "tcp pinecone client, sending data to other task eror:{:?}",
+                        err
+                    );
+                }
             }
             Err(e) => {
                 tracing::error!("Error reading from socket: {}", e);
@@ -400,15 +433,20 @@ async fn sender_tcp_pinecone_client_process(
     shared_state: SharedState,
     mut rx_chan: mpsc::Receiver<Vec<u8>>,
 ) {
-    tracing::debug!(
-        "tcp pinecone client sender is started,route info:{:?},recv nw id:{},fwd nw id:{}",
-        route_info,
-        recv_nw_id as u16,
-        fwd_nw_id as u16
-    );
     loop {
         if let Some(data) = rx_chan.recv().await {
-            let _ = socket.write_all(&data).await;
+            if let Err(err) = socket.write_all(&data).await {
+                tracing::error!("tcp pinecone client writeall: {:?}", err);
+            }
+
+            tracing::debug!(
+                "tcp pinecone client outgoing,recv nw id:{},fwd nw id:{},route_info:{:?},size:{},payload:\n",
+                recv_nw_id as u16,
+                fwd_nw_id as u16,
+                route_info,
+                data.len()
+            );
+            log_payload("\n", &data).await;
         }
     }
 }

@@ -1,3 +1,7 @@
+/*
+    Copyright 2022-2023 TII (SSRC) and the contributors
+    SPDX-License-Identifier: Apache-2.0
+*/
 use clap::Parser;
 use lazy_static::lazy_static;
 use pnet::datalink::{self};

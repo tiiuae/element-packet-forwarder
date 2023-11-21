@@ -29,7 +29,10 @@ jobs:
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
         sudo chown -R $(id -u):$(id -g) ${GITHUB_WORKSPACE}
     - name: Clippy Check
-      uses: actions-rs/clippy-check@v1
+      uses: qernal/github-actions-rust-clippy@v2.0.2
       with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
+         args: "--verbose,--all-targets"
+         path_glob: "**/src"
+         git_ssh_key: "${{ secrets.base64_ssh_key }}" # Must be base64 encoded and a valid RSA key
+
+     

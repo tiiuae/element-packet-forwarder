@@ -21,11 +21,5 @@ jobs:
     - name: Build Docker image
       run: docker build -t element-packet-forwarder-docker .
 
-    - name: Save Docker image
-      run: docker save -o element-packet-forwarder-docker.tar element-packet-forwarder-docker
-
-    - name: Load Docker image
-      run: docker load -i element-packet-forwarder-docker.tar
-
     - name: Build and Test
       run: docker run element-packet-forwarder-docker cargo build --verbose && docker run element-packet-forwarder-docker cargo test --verbose

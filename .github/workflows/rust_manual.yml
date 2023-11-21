@@ -5,6 +5,11 @@ on:
   push:
     branches:
       - main
+      - develop
+  pull_request:   
+    branches:
+      - main
+      - develop
 
 jobs:
   build:
@@ -22,3 +27,9 @@ jobs:
       run: |
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo build --verbose
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
+    - name: Clippy Check
+      uses: actions-rs/clippy-check@v1
+      with:
+          crate-name: element-packet-forwarder
+          clippy-flags: '-D warnings'
+            

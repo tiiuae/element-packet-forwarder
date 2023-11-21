@@ -27,7 +27,7 @@ jobs:
       run: |
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo build --verbose
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
-        chown -R $(id -u):$(id -g) /prj/target
+        chown -R $(id -u):$(id -g) ${GITHUB_WORKSPACE}
     - name: Clippy Check
       uses: actions-rs/clippy-check@v1
       with:

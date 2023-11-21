@@ -30,6 +30,5 @@ jobs:
     - name: Clippy Check
       uses: actions-rs/clippy-check@v1
       with:
-          crate-name: element-packet-forwarder
-          clippy-flags: '-D warnings'
-            
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features

@@ -16,7 +16,7 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Build Docker image
-      run: docker build -f ${GITHUB_WORKSPACE}/Dockerfile -t element-packet-forwarder-docker 
+      run: docker build -t element-packet-forwarder-docker ${GITHUB_WORKSPACE}
 
     - name: Build and Test
       run: docker run -it element-packet-forwarder-docker cargo build --verbose && docker run element-packet-forwarder-docker cargo test --verbose

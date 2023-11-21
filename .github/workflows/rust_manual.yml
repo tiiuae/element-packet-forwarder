@@ -15,9 +15,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
-    - name: Set up Docker
-      uses: docker/setup-docker@v2
-
     - name: Build Docker image
       run: docker build -f ${GITHUB_WORKSPACE}/Dockerfile -t element-packet-forwarder-docker 
 

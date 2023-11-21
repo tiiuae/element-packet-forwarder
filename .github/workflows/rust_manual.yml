@@ -1,4 +1,4 @@
-name: Rust CI with Docker
+name: Rust CI with Local Docker Build
 
 on:
   workflow_dispatch:
@@ -11,20 +11,21 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    services:
-      rust-container:
-        image: element-packet-forwarder-docker:latest
-        options: --entrypoint "tail -f /dev/null"
-
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
 
+    - name: Set up Docker
+      uses: docker/setup-docker@v2
+
     - name: Build Docker image
       run: docker build -t element-packet-forwarder-docker .
 
-    - name: Set up Rust
-      run: docker exec -t rust-container cargo --version
+    - name: Save Docker image
+      run: docker save -o element-packet-forwarder-docker.tar element-packet-forwarder-docker
+
+    - name: Load Docker image
+      run: docker load -i element-packet-forwarder-docker.tar
 
     - name: Build and Test
-      run: docker exec -t rust-container cargo build --verbose && docker exec -t rust-container cargo test --verbose
+      run: docker run element-packet-forwarder-docker cargo build --verbose && docker run element-packet-forwarder-docker cargo test --verbose

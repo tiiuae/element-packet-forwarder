@@ -12,9 +12,8 @@
 
 </div>
 
-<div align="left">
-![Code Coverage](https://raw.githubusercontent.com/$OWNER/$REPO/_xml_coverage_reports/data/develop/badge.svg)
-</div>
+![Code Coverage](https://raw.githubusercontent.com/tiiuae/element-packet-forwarder/_xml_coverage_reports/data/develop/badge.svg)
+
 
 
 This repository contains the source files (code and documentation) of element packet forwarder application — an open-source project to forward [element chat app](https://element.io/) packets from the external network to the internal network. The project is going to be deployed on [ghaf](https://github.com/tiiuae/ghaf) platform.

@@ -15,11 +15,13 @@ RUN apt-get update && apt-get install -y \
     gcc \
     build-essential \
     curl \
+    pkg-config \
+    libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
 ## Install the most recent version of the nightly Rust toolchain using rustup.
 ## Use the minimal profile to keep the image size down as much as possible.
-## https://rustup.rs/
+## https://rustup.rvs/
 # Get Rust
 RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
 

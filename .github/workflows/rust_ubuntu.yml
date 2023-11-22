@@ -30,7 +30,11 @@ jobs:
       run: |
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo build --verbose
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
-      
+    
+    - name: Clippy Check 
+      run:  docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker ./clippy.sh
+
+    
     - name: Genarate Cobertura xml
       run: |
         docker run --security-opt seccomp=unconfined -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo tarpaulin --out xml --output-dir target/coverage

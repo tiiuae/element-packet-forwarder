@@ -29,7 +29,13 @@ jobs:
       run: |
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo build --verbose
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
-        sudo chown -R $(id -u):$(id -g) ${GITHUB_WORKSPACE}
+    - name: Creating Covarage report
+      run: |
+        docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo tarpaulin --output Cobertura --output-dir target/coverage
+    
+    - name: Change ownership of files from root
+      run:  sudo chown -R $(id -u):$(id -g) ${GITHUB_WORKSPACE}
+
     - name: Clippy Check
       uses: giraffate/clippy-action@v1
       with:

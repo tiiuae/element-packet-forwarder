@@ -30,7 +30,7 @@ jobs:
       run: |
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo build --verbose
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
-   
+      
     - name: Genarate Cobertura xml
       run: |
         docker run --security-opt seccomp=unconfined -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo tarpaulin --out xml --output-dir target/coverage
@@ -67,7 +67,7 @@ jobs:
           coverage-summary-title: "Code Coverage Summary"
 
 
-    - name: Clippy Check
+    - name: Produce Clippy Report
       uses: giraffate/clippy-action@v1
       with:
           reporter: 'github-pr-review'

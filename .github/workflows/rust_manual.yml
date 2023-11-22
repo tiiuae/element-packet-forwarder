@@ -38,8 +38,8 @@ jobs:
       run:  sudo chown -R $(id -u):$(id -g) ${GITHUB_WORKSPACE}
 
     - name: Produce the coverage report
-        uses: insightsengineering/coverage-action@v2
-        with:
+      uses: insightsengineering/coverage-action@v2
+      with:
           # Path to the Cobertura XML report.
           path: ${GITHUB_WORKSPACE}/target/coverage/cobertura.xml
           # Minimum total coverage, if you want to the

@@ -4,7 +4,6 @@
 
 # element-packet-forwarder
 
-[<img alt="github" src="https://img.shields.io/badge/github-enesoztrk/element--packet--forwarder-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="22">](https://github.com/enesoztrk/element-packet-forwarder)
 
 <div align="left">
 
@@ -12,6 +11,7 @@
 
 </div>
 
+![Status](https://github.com/tiiuae/element-packet-forwarder/actions/workflows/rust_ubuntu.yml/badge.svg)
 
 This repository contains the source files (code and documentation) of element packet forwarder application — an open-source project to forward [element chat app](https://element.io/) packets from the external network to the internal network. The project is going to be deployed on [ghaf](https://github.com/tiiuae/ghaf) platform.
 
@@ -52,6 +52,15 @@ The Ghaf team uses several licenses to distribute software and documentation:
 
 
 See [LICENSE.Apache-2.0](./LICENSES/LICENSE.Apache-2.0)  for the full license text.
+
+
+
+## Dependencies
+* Supported Dendrite version(s) :[v0.9.1](https://github.com/matrix-org/dendrite/tree/v0.9.1)
+* Supported Element app version(s) : [1.11.50](https://github.com/vector-im/element-desktop/tree/v1.11.50)
+* Turn server: 
+  * ubuntu : ``apt install coturn`` , example configuration file could be found in config_files/turnserver.conf
+
 
 ## Authors
 

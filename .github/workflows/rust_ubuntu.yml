@@ -1,0 +1,80 @@
+name: Rust CI with Local Ubuntu Docker Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:   
+    branches:
+      - main
+      - develop
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Build Docker image
+      run: docker build -f ${GITHUB_WORKSPACE}/Dockerfile.ubuntu -t element-packet-forwarder-docker ${GITHUB_WORKSPACE}
+
+    - name: Build and Test
+      run: |
+        docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo build --verbose
+        docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
+    
+    - name: Clippy Check 
+      run:  docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker ./scripts/clippy.sh
+
+    
+    - name: Genarate Cobertura xml
+      run: |
+        docker run --security-opt seccomp=unconfined -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo tarpaulin --out xml --output-dir target/coverage
+    
+    - name: Change ownership of files from root
+      run:  sudo chown -R $(id -u):$(id -g) ${GITHUB_WORKSPACE}
+
+    - name: Produce the coverage report
+      uses: insightsengineering/coverage-action@v2
+      with:
+          # Path to the Cobertura XML report.
+          path: ${GITHUB_WORKSPACE}/target/coverage/cobertura.xml
+          # Minimum total coverage, if you want to the
+          # workflow to enforce it as a standard.
+          # This has no effect if the `fail` arg is set to `false`.
+          threshold: 10
+          # Fail the workflow if the minimum code coverage
+          # reuqirements are not satisfied.
+          fail: true
+          # Publish the rendered output as a PR comment
+          publish: true
+          # Create a coverage diff report.
+          diff: true
+          # Branch to diff against.
+          # Compare the current coverage to the coverage
+          # determined on this branch.
+          diff-branch: main
+          # This is where the coverage reports for the
+          # `diff-branch` are stored.
+          # Branch is created if it doesn't already exist'.
+          diff-storage: _xml_coverage_reports
+          # A custom title that can be added to the code
+          # coverage summary in the PR comment.
+          coverage-summary-title: "Code Coverage Summary"
+
+
+    - name: Produce Clippy Report
+      uses: giraffate/clippy-action@v1
+      with:
+          reporter: 'github-pr-review'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+     

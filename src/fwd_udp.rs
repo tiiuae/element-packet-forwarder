@@ -13,17 +13,73 @@ use std::error::Error;
 use std::ffi::CString;
 use std::net::IpAddr;
 use std::net::SocketAddr;
-use std::net::{Ipv6Addr, SocketAddrV6};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use tokio::net::UdpSocket;
 use tokio::task::yield_now;
 use tokio::time::{sleep, Duration};
 ///ff02::114
-const PINECONE_UDP_MCAST_ADDR: Ipv6Addr =
+const PINECONE_UDP_MCAST_IPV6: Ipv6Addr =
     Ipv6Addr::new(0xff02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0114);
 const PINECONE_UDP_MCAST_PORT: u16 = 60606;
-const PINECONE_UDP_MCAST_ADDR_PORT_STR: &str = "ff02::114:60606";
+const PINECONE_UDP_MCAST_IPV4: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 114);
+
+async fn udp_ipv4_init(interface_name: &str, interface_ip: Ipv4Addr) -> std::net::UdpSocket {
+    tracing::trace!(
+        "Udp Ipv4 interface name:{},ip:{}",
+        interface_name,
+        interface_ip
+    );
+
+    let ipv4_addr = Ipv4Addr::new(0, 0, 0, 0);
+
+    // Create a SocketAddrV6 variable by specifying the address and port
+    let socket_addr_v4 = SocketAddrV4::new(ipv4_addr, PINECONE_UDP_MCAST_PORT);
+
+    tracing::trace!("Multicast udp SocketAddrV4: {}", socket_addr_v4);
+
+    get_udpsock_with_mcastv4_opts(
+        &socket_addr_v4,
+        &PINECONE_UDP_MCAST_IPV4,
+        &interface_ip,
+        interface_name,
+    )
+    .await
+    .expect("Failed to set multicast options")
+}
+
+async fn get_udpsock_with_mcastv4_opts(
+    addr: &SocketAddrV4,
+    multiaddr: &Ipv4Addr,
+    if_addr: &Ipv4Addr,
+    if_name: &str,
+) -> Result<std::net::UdpSocket, Box<dyn Error>> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+
+    let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
+
+    socket.set_reuse_address(true).expect("set_reuse_Addr err");
+    socket.bind(&SockAddr::from(*addr)).expect("bind error");
+    socket
+        .bind_device(Some(if_name.as_bytes()))
+        .expect("bind device err");
+    // socket.set_only_v6(true).unwrap_or_else(|e|{println!("error : {}",e)});
+    socket
+        .join_multicast_v4(multiaddr, if_addr)
+        .expect("join multicast v4 error");
+    socket
+        .set_multicast_if_v4(if_addr)
+        .expect("set multicast interface v4");
+
+    socket
+        .set_multicast_loop_v4(false)
+        .expect("set mcast loop v4 err");
+
+    socket.set_nonblocking(true).expect("set nonblocking err");
+
+    Ok(socket.into())
+}
 
 async fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
     // let ipv6_addr = Ipv6Addr::from_str(ipv6_str).expect("Failed to parse IPv6 address");
@@ -45,7 +101,7 @@ async fn udp_ipv6_init(interface_name: &str) -> std::net::UdpSocket {
 
     get_udpsock_with_mcastv6_opts(
         &socket_addr_v6,
-        &PINECONE_UDP_MCAST_ADDR,
+        &PINECONE_UDP_MCAST_IPV6,
         ifindex,
         interface_name,
     )
@@ -163,20 +219,46 @@ pub async fn start_pinecone_udp_mcast(
     Ok(())
 }
 
+#[allow(clippy::collapsible_else_if)]
 async fn create_pinecone_udp_sock(nw_id: NwId) -> tokio::net::UdpSocket {
-    let std_udp_sock: std::net::UdpSocket = if nw_id == NwId::One {
-        udp_ipv6_init(cli::get_if1_name().unwrap()).await
+    let std_udp_sock = if nw_id == NwId::One {
+        if cli::is_if1_ipv4() {
+            let ipv4_addr: Ipv4Addr = cli::get_if1_ip()
+                .unwrap()
+                .to_string()
+                .parse()
+                .expect("Ipv4 parse error");
+            udp_ipv4_init(cli::get_if1_name().unwrap(), ipv4_addr).await
+        } else {
+            udp_ipv6_init(cli::get_if1_name().unwrap()).await
+        }
     } else {
-        udp_ipv6_init(cli::get_if2_name().unwrap()).await
+        if cli::is_if2_ipv4() {
+            let ipv4_addr: Ipv4Addr = cli::get_if2_ip()
+                .unwrap()
+                .to_string()
+                .parse()
+                .expect("Ipv4 parse error");
+            udp_ipv4_init(cli::get_if2_name().unwrap(), ipv4_addr).await
+        } else {
+            udp_ipv6_init(cli::get_if1_name().unwrap()).await
+        }
     };
 
     UdpSocket::from_std(std_udp_sock).expect("from std err")
 }
 
-/// Send bytes to Udp Socket from  nw two
+fn get_udp_socketaddr() -> SocketAddr {
+    if cli::is_if1_ipv4() {
+        SocketAddr::new(IpAddr::V4(PINECONE_UDP_MCAST_IPV4), PINECONE_UDP_MCAST_PORT)
+    } else {
+        SocketAddr::new(IpAddr::V6(PINECONE_UDP_MCAST_IPV6), PINECONE_UDP_MCAST_PORT)
+    }
+}
+
+/// Send bytes to network one Udp Socket from  nw two
 async fn udp_pinecone_send_nw_one(tx_socket: Arc<tokio::net::UdpSocket>, state: SharedState) {
-    let sockaddr: SocketAddr =
-        SocketAddr::new(IpAddr::V6(PINECONE_UDP_MCAST_ADDR), PINECONE_UDP_MCAST_PORT);
+    let sockaddr: SocketAddr = get_udp_socketaddr();
 
     loop {
         let data = state.get_udp_incoming_pinecone_data(1).await;

@@ -11,7 +11,7 @@ use crate::NwId;
 use nix::net::if_::*;
 use std::error::Error;
 use std::ffi::CString;
-use std::net::{Ipv6Addr, SocketAddrV6};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use tokio::io::{self, ReadHalf, WriteHalf};
@@ -77,11 +77,70 @@ fn tcp_sock_ipv6_init(
     Ok(socket.into())
 }
 
+fn tcp_sock_ipv4_init(
+    interface_name: &str,
+    port_num: u16,
+    max_client_num: i32,
+) -> Result<std::net::TcpListener, Box<dyn Error>> {
+    use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+
+    let ipv4_addr = Ipv4Addr::new(0, 0, 0, 0);
+
+    // Convert the interface name to  a CStr
+    /*let ifname =
+            CString::new(interface_name.as_bytes()).expect("Failed to create CStr from interface name");
+    */
+    // Get the interface index (scope ID) using if_nametoindex
+    /*  let ifindex = if_nametoindex(ifname.as_c_str()).unwrap_or_else(|err| {
+        panic!("Error getting {:?} interface index: {}", ifname, err);
+    });*/
+
+    // Create a SocketAddrV6 variable by specifying the address and port
+    let socket_addr_v4 = SocketAddrV4::new(ipv4_addr, port_num);
+
+    tracing::trace!("SocketAddrV4: {}", socket_addr_v4);
+
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+        .expect("tcp socket ipv4 creation err");
+
+    // Set socket options
+    socket
+        .set_reuse_address(true)
+        .expect("tcp ipv4 set reuse addr err");
+    socket
+        .bind(&SockAddr::from(socket_addr_v4))
+        .expect("tcp ipv4 bind err");
+    socket
+        .bind_device(Some(interface_name.as_bytes()))
+        .expect("tcp ipv4 bind device err");
+    socket
+        .set_nonblocking(true)
+        .expect("tcp ipv4 set nonblocking err");
+
+    // Configure TCP-specific options if needed
+    socket.set_nodelay(true).expect("tcp socket nodelay error");
+
+    // Listen for incoming connections
+    socket
+        .listen(max_client_num)
+        .expect("tcp max client size set err"); // Set the backlog queue size
+    Ok(socket.into())
+}
+
+#[allow(clippy::collapsible_else_if)]
 fn create_pinecone_tcp_sock(nw_id: NwId, port_num: u16) -> tokio::net::TcpListener {
     let std_tcp_sock = if nw_id == NwId::One {
-        tcp_sock_ipv6_init(cli::get_if1_name().unwrap(), port_num, MAX_CLIENT_NUM).unwrap()
+        if cli::is_if1_ipv4() {
+            tcp_sock_ipv4_init(cli::get_if1_name().unwrap(), port_num, MAX_CLIENT_NUM).unwrap()
+        } else {
+            tcp_sock_ipv6_init(cli::get_if1_name().unwrap(), port_num, MAX_CLIENT_NUM).unwrap()
+        }
     } else {
-        tcp_sock_ipv6_init(cli::get_if2_name().unwrap(), port_num, MAX_CLIENT_NUM).unwrap()
+        if cli::is_if2_ipv4() {
+            tcp_sock_ipv4_init(cli::get_if2_name().unwrap(), port_num, MAX_CLIENT_NUM).unwrap()
+        } else {
+            tcp_sock_ipv6_init(cli::get_if2_name().unwrap(), port_num, MAX_CLIENT_NUM).unwrap()
+        }
     };
 
     TcpListener::from_std(std_tcp_sock).expect("tcp pinecone from std err")

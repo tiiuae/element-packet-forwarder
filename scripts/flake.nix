@@ -1,3 +1,17 @@
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    gitignore = {
+      url = "github:hercules-ci/gitignore.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
 outputs = { self, nixpkgs, flake-utils, rust-overlay, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -15,9 +29,26 @@ outputs = { self, nixpkgs, flake-utils, rust-overlay, ... }:
           src = ../.; # the folder with the cargo.toml
           cargoLock.lockFile = ../Cargo.lock;
         };
+
         dockerImage = pkgs.dockerTools.buildImage {
-          name = "element-packet-forwarder-nix-docker-image";
-          config = { Cmd = [ "${myRustBuild}/bin/element-packet-forwarder" ]; };
+          name = "element-packet-forwarder-docker";
+          tag="latest";
+           copyToRoot = pkgs.buildEnv {
+              name = "image-root";
+              paths = [  pkgs.dockerTools.caCertificates pkgs.gcc
+                        pkgs.bashInteractive pkgs.fakeNss pkgs.coreutils pkgs.gnused pkgs.openssh pkgs.binutils pkgs.curl pkgs.pkg-config pkgs.gnupg pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.pre-commit pkgs.rustPackages.clippy ];
+              pathsToLink = [ "/bin" "/etc" "/var"];
+    };
+
+    runAsRoot = ''
+      mkdir -p /prj
+    '';
+          config = {
+            Cmd = ["/bin/sh"
+           ];
+           Env = [ "USER=root" ];
+           WorkingDir = "/prj"; # Set your desired working directory
+          };
         };
       in {
         packages = {
@@ -27,6 +58,13 @@ outputs = { self, nixpkgs, flake-utils, rust-overlay, ... }:
         defaultPackage = dockerImage;
         devShell = pkgs.mkShell {
           buildInputs =
-            [ (rustVersion.override { extensions = [ "rust-src" ]; }) ];
+            [  pkgs.cargo pkgs.rustc pkgs.rustfmt pkgs.pre-commit pkgs.rustPackages.clippy 
+              (rustVersion.override { extensions = [ "rust-src" ]; })
+              pkgs.coreutils
+               
+            ];
         };
       });
+
+
+}

@@ -15,8 +15,11 @@ use std::error::Error;
 async fn main() -> Result<(), Box<dyn Error>> {
     let shared_state = SharedState::new().await;
 
+    start_tracing_engine()
+        .await
+        .expect("Tracing engine cannot be started");
+
     let _ = join!(
-        start_tracing_engine(),
         fwd_udp::start_pinecone_udp_mcast(shared_state.clone()),
         start_task_management(shared_state.clone())
     );

@@ -73,7 +73,7 @@ pub async fn start_task_management(state: SharedState) -> Result<(), Box<dyn std
 }
 
 async fn task_management_process(state: SharedState) {
-    tracing::error!("Task management process has started");
+    tracing::debug!("Task management process has started");
 
     loop {
         let is_connected = state.is_udp_pinecone_connected(1).await;

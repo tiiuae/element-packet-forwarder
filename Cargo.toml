@@ -22,7 +22,10 @@ exclude = [
     # for example, assume the below is a folder which contains large `mp4` files:
     #   "examples/assets"
 ]
-
+build = "build.rs"
+[build-dependencies]
+vergen-gix = { version = "1.0.0-beta.1", features = ["build", "cargo", "rustc", "si"] }
+anyhow = "1"
 # See here for more info: https://blog.rust-lang.org/2020/03/15/docs-rs-opt-into-fewer-targets.html
 
 [package.metadata.docs.rs]

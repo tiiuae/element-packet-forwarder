@@ -32,7 +32,7 @@ jobs:
         docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker cargo test --verbose
     
     - name: Clippy Check 
-      run:  docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker ./clippy.sh
+      run:  docker run -v ${GITHUB_WORKSPACE}:/prj element-packet-forwarder-docker ./scripts/clippy.sh
 
     
     - name: Genarate Cobertura xml

@@ -4,13 +4,14 @@
 
 # element-packet-forwarder
 
-[<img alt="github" src="https://img.shields.io/badge/github-enesoztrk/element--packet--forwarder-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="22">](https://github.com/enesoztrk/element-packet-forwarder)
 
 <div align="left">
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-darkgreen.svg)](./LICENSES/LICENSE.Apache-2.0) 
 
 </div>
+
+![Status](https://github.com/tiiuae/element-packet-forwarder/actions/workflows/rust_ubuntu.yml/badge.svg)
 
 ![Code Coverage](https://raw.githubusercontent.com/tiiuae/element-packet-forwarder/_xml_coverage_reports/data/develop/badge.svg)
 
@@ -55,6 +56,15 @@ The Ghaf team uses several licenses to distribute software and documentation:
 
 
 See [LICENSE.Apache-2.0](./LICENSES/LICENSE.Apache-2.0)  for the full license text.
+
+
+
+## Dependencies
+* Supported Dendrite version(s) :[v0.9.1](https://github.com/matrix-org/dendrite/tree/v0.9.1)
+* Supported Element app version(s) : [1.11.50](https://github.com/vector-im/element-desktop/tree/v1.11.50)
+* Turn server: 
+  * ubuntu : ``apt install coturn`` , example configuration file could be found in config_files/turnserver.conf
+
 
 ## Authors
 

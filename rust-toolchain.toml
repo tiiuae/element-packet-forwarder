@@ -1,0 +1,11 @@
+[toolchain]
+channel = "nightly-2024-01-24"
+components = [ "rustfmt", "rustc-dev",  "rust-src","llvm-tools-preview","clippy","rust-analyzer" ]
+targets = ["x86_64-unknown-linux-gnu"]
+profile = "minimal"
+
+
+
+# this is for rustfmt
+[[other-toolchain]]
+channel = "nightly-2024-01-24"

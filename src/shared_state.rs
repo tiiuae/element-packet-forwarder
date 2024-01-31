@@ -2,23 +2,26 @@
     Copyright 2022-2023 TII (SSRC) and the contributors
     SPDX-License-Identifier: Apache-2.0
 */
-use crate::cli::get_if2_name;
-use socket2::SockAddr;
+use crate::cli::{get_if2_name,is_if2_ipv4};
 use std::collections::{HashMap, VecDeque};
 use std::net::Ipv6Addr;
 use std::net::{IpAddr, SocketAddr};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
 use std::sync::Arc;
-use tokio::io;
-use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::task::{self, JoinHandle};
 const TOTAL_NUM_NW: usize = 2;
 const UDP_CONN_MAX_TICK: u8 = 3;
 #[derive(PartialEq, Clone, Debug, Copy)]
+
+/// Enum for network id
+///
+///
 pub enum NwId {
+    ///Network id 1
     One = 0,
+    ///Network id 2
     Two = 1,
 }
 
@@ -376,7 +379,13 @@ impl SharedState {
         let if_name = get_if2_name().unwrap();
         let tcp_pinecone_port = self.get_tcp_src_port_nw_one(nw_id).await;
 
-        tcp_pinecone_ip.to_string() + "%" + if_name + ":" + tcp_pinecone_port.to_string().as_str()
+        if is_if2_ipv4(){
+            tcp_pinecone_ip.to_string() +":" + tcp_pinecone_port.to_string().as_str()
+        }
+        else{
+            tcp_pinecone_ip.to_string() + "%" + if_name + ":" + tcp_pinecone_port.to_string().as_str()
+
+        }
     }
     ///get tcp pinecone server ip
     pub async fn set_tcp_pinecone_dest_ip_addr(&self, nw_id: NwId, addr: IpAddr) {

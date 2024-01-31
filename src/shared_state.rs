@@ -379,7 +379,13 @@ impl SharedState {
         let if_name = get_if2_name().unwrap();
         let tcp_pinecone_port = self.get_tcp_src_port_nw_one(nw_id).await;
 
-        tcp_pinecone_ip.to_string() + "%" + if_name + ":" + tcp_pinecone_port.to_string().as_str()
+        if is_if2_ipv4(){
+            tcp_pinecone_ip.to_string() +":" + tcp_pinecone_port.to_string().as_str()
+        }
+        else{
+            tcp_pinecone_ip.to_string() + "%" + if_name + ":" + tcp_pinecone_port.to_string().as_str()
+
+        }
     }
     ///get tcp pinecone server ip
     pub async fn set_tcp_pinecone_dest_ip_addr(&self, nw_id: NwId, addr: IpAddr) {

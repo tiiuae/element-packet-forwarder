@@ -8,6 +8,7 @@ use pnet::datalink::{self};
 use std::error::Error;
 use std::net::IpAddr;
 use std::str;
+use std::net::Ipv4Addr;
 lazy_static! {
     static ref CLI_ARGS: Args = {
 
@@ -127,7 +128,14 @@ pub fn get_if1_ip() -> Result<IpAddr, Box<dyn Error>> {
     get_app_ip(&CLI_ARGS.if1, &CLI_ARGS.is_if1_ipv6)
 }
 pub fn get_if2_ip() -> Result<IpAddr, Box<dyn Error>> {
-    get_app_ip(&CLI_ARGS.if2, &CLI_ARGS.is_if2_ipv6)
+    //get_app_ip(&CLI_ARGS.if2, &CLI_ARGS.is_if2_ipv6)
+    /*
+    For testing ghaf environment. There are two ip addresses in the same network interface.
+    That's why it selects the wrong ip address.
+    */
+    let ipv4_address = IpAddr::V4(Ipv4Addr::new(192, 168, 100, 1));
+
+    Ok(ipv4_address) 
 }
 /// Checks if the first network interface has an IPv4 address.
 ///

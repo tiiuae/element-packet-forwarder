@@ -2,7 +2,7 @@
     Copyright 2022-2023 TII (SSRC) and the contributors
     SPDX-License-Identifier: Apache-2.0
 */
-use crate::cli::get_if2_name;
+use crate::cli::{get_if2_name,is_if2_ipv4};
 use std::collections::{HashMap, VecDeque};
 use std::net::Ipv6Addr;
 use std::net::{IpAddr, SocketAddr};

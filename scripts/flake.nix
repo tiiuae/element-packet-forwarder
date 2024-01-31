@@ -35,7 +35,7 @@ outputs = { self, nixpkgs, flake-utils, rust-overlay, ... }:
           tag="latest";
            copyToRoot = pkgs.buildEnv {
               name = "image-root";
-              paths = [  pkgs.dockerTools.caCertificates pkgs.gcc
+              paths = [ pkgs.git pkgs.cmake pkgs.dockerTools.caCertificates pkgs.gcc
                         pkgs.bashInteractive pkgs.fakeNss pkgs.coreutils pkgs.gnused pkgs.openssh pkgs.binutils pkgs.curl pkgs.pkg-config pkgs.gnupg pkgs.rustup ];
               pathsToLink = [ "/bin" "/etc" "/var"];
     };

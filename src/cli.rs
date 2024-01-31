@@ -20,9 +20,11 @@ lazy_static! {
     };
 }
 
+const VERSION:&str = concat!("\ncommit sha: ",env!("VERGEN_GIT_SHA") ,"\ncommit date: ",env!("VERGEN_GIT_COMMIT_DATE"),"\ncommit timestamp:",env!("VERGEN_GIT_COMMIT_TIMESTAMP"),"\nbuild timestamp:",env!("VERGEN_BUILD_TIMESTAMP"));
+
 /// Packet forwarder cli argument parser
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, about, long_about =None ,version =VERSION)]
 struct Args {
     /// Name of first network interface
     #[arg(long)]
@@ -53,8 +55,11 @@ fn is_on_off(s: &str) -> Result<String, String> {
         Err("Value can be on or off".to_string())
     }
 }
+
 fn handling_args() -> Result<Args, Box<dyn Error>> {
     let args: Args = Args::parse();
+
+   
     Ok(args)
 }
 
